@@ -325,6 +325,36 @@ error), (2) or `kubectl exec` the same check without involving the agent,
 (3) running sessions that predate the merge stay on the old contract until
 restarted — so the rollout plan is a session restart per agent, Lando first.
 
+### Session 2, continued — the E2E scratch run goes live (snapdex#995)
+
+Matt restarted the fleet and the team picked up snapdex#995 (a night-theme
+contrast bug). Claude armed a milestone monitor on the issue (charter →
+pickups/baselines → usage reports → close → ledger row). Findings from the
+first minutes of live operation, in order:
+
+1. **The worker side works on the first try.** Yoda posted the pickup comment
+   and the separate usage-baseline comment (the two-comment shape from the
+   review fixes), then a completion `falcon:usage:v1` marker: `quality:
+   "exact"`, 23 API calls, full per-type token counts INCLUDING output, a
+   7-minute stage window, and the corrected `full@d45760b` variant tag.
+2. **Planned≠actual model detection paid off immediately**: the roster says
+   Yoda runs claude-sonnet-4-5; the transcript says `claude-opus-5` — Matt
+   upgraded models with the restart. The transcript is ground truth by
+   design, so the report is right and the roster is stale (to update after
+   the run, from observed actuals).
+3. **`claude-opus-5` is missing from the pinned rate feed** (July 13 LiteLLM
+   snapshot predates it), so this issue's total will render "partial — model
+   has no rate" instead of a made-up number: the fail-loud ladder's first
+   real exercise. Fix dispatched through the sanctioned pipeline (kyber's
+   refresh-provider-rates workflow → bot PR from the latest upstream feed →
+   copy to fdc → fan-out) — never hand-typed.
+4. **No mini-charter yet**: the issue predates Lando's session restart, so
+   dispatch likely came from a `labeled`/recovery path, not the
+   `issues.opened` kickoff where Step 1.7 lives — the exact gap we left as a
+   stretch item (dispatch-time charter backstop). If it holds, the ledger row
+   carries `planned: null` and the backstop gets promoted from stretch to
+   to-do.
+
 ### Session 2, continued — design confirmation: self-reports are the truth
 
 I described my mental model back as a test: an agent that goes through a
