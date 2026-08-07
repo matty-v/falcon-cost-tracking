@@ -355,6 +355,28 @@ first minutes of live operation, in order:
    carries `planned: null` and the backstop gets promoted from stretch to
    to-do.
 
+### Session 2, continued — "is 3.1M tokens accurate?" (level vs flow)
+
+Watching the live run, I challenged the first number the system produced: Yoda
+reported 3.1M tokens while Kyber's context-pressure view showed him at ~150k.
+Both are right — they measure different things, and the arithmetic connects
+them: context pressure is a LEVEL (~150k window right now), the usage report
+is a FLOW (23 API calls × ~131k re-read context ≈ 3.0M cache reads + 28.6k
+output + 57.8k cache writes + 41 uncached input = 3.10M). 97% of the total is
+cache reads at a 10×-cheaper rate, so the stage costs ~$2.60 at opus-5 rates
+— not the ~$15.50 a naive tokens×input-rate read would suggest. This is
+precisely why the pipeline tracks four token types instead of one number, and
+why kyber's last-message sampling (context semantics) can never be the spend
+source. My misread is itself a UX finding: the Discord 📊 bullet's raw token
+count reads scarier than the money it represents — a format tweak (cache-read
+share, or est. $) is on the table for after the baseline arm.
+
+Meanwhile the run itself validated the multi-segment design unprompted: the
+second usage report is Yoda AGAIN (`approval-verdict`, 1.41M tokens, 8 calls)
+after his triage segment — same agent, two envelopes, two kept reports, which
+is exactly the kickback-accounting scenario I'd described as a requirement
+before we confirmed the design.
+
 ### Session 2, continued — design confirmation: self-reports are the truth
 
 I described my mental model back as a test: an agent that goes through a
