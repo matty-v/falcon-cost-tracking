@@ -303,6 +303,28 @@ also corrected my mental model from the runbook: the human gate is the
 *approval before the tag* — once cut, falcon promotes automatically, so "ready
 to deploy" actually arrives as "deploying."
 
+### Session 2, continued — "how do I confirm an agent runs the newest skills?"
+
+My question surfaced a real bug before it answered anything: while verifying
+what to check, Claude found the vendor fan-out workflow replaces the vendored
+bundle but never updates `vendor/falcon-dev-common-version` — so every agent
+repo's pin file was lying (`9c63b54` while the bundle is `2698293`), and that
+stale sha is exactly what `token-usage.sh` stamps into every usage report's
+`charter_variant`. The same pass found the fan-out's trigger paths were
+missing `CONTRACTS.md`, `config/**`, and `VARIANT` — meaning a rates refresh
+or an experiment variant flip would silently not propagate to the fleet.
+Both fixed in fdc#119 + a corrective workflow_dispatch to repair the 8 stale
+pins. Lesson recorded: "how do I verify X" questions are bug-finders — the
+verification artifact itself was broken.
+
+The actual answer (confirmed against kyber's boot script, kyber#323): a
+session restart fetch+merges the identity repo and re-links `skills/` +
+`vendor/*/skills` into `~/.claude/skills`, so — (1) ask the agent to `cat
+vendor/falcon-dev-common/VARIANT` (new-in-this-release canary: old bundles
+error), (2) or `kubectl exec` the same check without involving the agent,
+(3) running sessions that predate the merge stay on the old contract until
+restarted — so the rollout plan is a session restart per agent, Lando first.
+
 ### Session 2, continued — design confirmation: self-reports are the truth
 
 I described my mental model back as a test: an agent that goes through a
