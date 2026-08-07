@@ -135,6 +135,43 @@ experiment, (5) write-up.
 Plan approved; Claude created the phase task list, created this repository, and
 transposed the log. Next: the kyber PR.
 
+### Session 1, continued — Phases 1+2 in parallel
+
+Claude delegated the kyber fix (Phase 1) to a background implementation agent
+with the full file-level design (branch `fix/output-token-cost`, no push until I
+review), and built the team layer (Phase 2) in the foreground:
+
+- **`scripts/token-usage.sh`** (falcon-dev-common) — the per-stage self-report.
+  Wrote it plus an 18-case test suite. The tests immediately caught one real
+  bug: the filename sanitizer used `echo`, whose trailing newline got translated
+  into a stray `_` in the baseline filename. Worth noting: the AI wrote both the
+  bug and the test that caught it — the value of insisting on tests for "simple"
+  shell scripts.
+- **`scripts/issue-cost.sh`** — Lando's close-path aggregator (collect markers →
+  price from the vendored rate snapshot → cross-check metrics → emit the ledger
+  row). 17-case suite covering the truthfulness ladder (`exact` / `lower_bound` /
+  `unavailable`), unpriced-model handling (never $0.00), date-suffix rate lookup,
+  and the cross-check labeling of the platform's missing-output-tokens gap.
+  Design choice made here (deviating slightly from the plan, which had this
+  logic inline in Lando's skill doc): ~200 lines of aggregation/pricing logic
+  belongs in a *tested script*, not in prose instructions an LLM re-interprets
+  every run. The skill doc now just calls the script.
+- Charter/contract edits: CONTRACTS **§10** (normative marker registry),
+  CHARTER comment shapes + Lando bookends, `handle-inbound.md` Steps 2b/4b,
+  the single chartered 📊 ban-list carve-out in `discord-post.md`,
+  `config/team-roster.yaml`, the rates snapshot copy, `VARIANT`, CHANGELOG.
+- Lando skill edits: Step 1.7 mini-charter (marker + 🧭 card), Step 6b rewired
+  to call `issue-cost.sh`, append the ledger, and derive all card/DM cost lines
+  from the ledger row (the metrics API demoted from source-of-truth to labeled
+  cross-check). Claude caught its own dangling `$PR_NUMBERS` reference during
+  review and added the missing derivation.
+- Ran fdc's full existing test suite: 3 failures — verified **pre-existing on a
+  clean tree** (dev-lock / pre-commit-guard / sync-vendor; look
+  macOS-vs-pod-environment related), so not chased. Both new suites pass.
+- Committed on `feat/cost-tracking` branches in both private repos and mirrored
+  the scripts + full patches into `docs/mirror/` here, since reviewers can't see
+  the private repos.
+
 ---
 
 ## Appendix A — the assignment (verbatim)

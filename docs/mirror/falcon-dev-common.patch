@@ -1,0 +1,1784 @@
+commit b1fc11dcc98002ba899d1bba61e9abacebbc4f34
+Author: Matt Voget <matt.voget@gmail.com>
+Date:   Fri Aug 7 12:56:05 2026 -0600
+
+    feat(cost): per-issue cost tracking — worker self-reports, mini-charter, ledger aggregation
+    
+    Workers measure their own per-stage token spend from their transcripts
+    (token-usage.sh) and embed it in the existing pickup/complete comment markers;
+    Lando posts a mini-charter at kickoff and aggregates/prices/cross-checks at
+    close (issue-cost.sh) into reports/cost-ledger.jsonl. CONTRACTS §10 is the
+    normative marker registry. Ack contract unchanged.
+    
+    Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 62b0059..cf70087 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -10,6 +10,25 @@ merges unless explicitly noted.
+ 
+ ## Unreleased
+ 
++- Add: **Per-issue cost tracking** (2026-08-07). Every worker now self-reports its
++  stage's token usage — `scripts/token-usage.sh` sums the agent's own Claude Code
++  transcripts (per model, output tokens included) at pickup (baseline) and
++  completion (delta), embedded as `falcon:usage-baseline:v1` / `falcon:usage:v1`
++  markers INSIDE the existing pickup/complete comments (ack contract unchanged;
++  CONTRACTS **§10** is the normative registry). Lando opens each issue with a
++  **mini-charter** (`falcon:charter:v1` on the issue body + 🧭 Team-plan Discord
++  card, planned crew/models from new `config/team-roster.yaml`) and closes it by
++  aggregating the self-reports via new `scripts/issue-cost.sh` — priced from a
++  vendored verbatim copy of Kyber's generated rate table
++  (`config/provider-rates.yaml` + `.meta`, provenance preserved, never hand-typed),
++  cross-checked against Kyber's metrics API with discrepancies LABELED (the
++  platform's missing-output-tokens gap included), and appended to a durable ledger
++  (`lando-agent/reports/cost-ledger.jsonl`). Truthfulness ladder is normative:
++  `exact` / `lower_bound` / `unavailable` — never fabricated, never $0.00.
++  OUTCOME Discord posts gain ONE chartered 📊 tokens bullet (explicit ban-list
++  carve-out in `skills/discord-post.md`). New `VARIANT` file tags every report
++  with the active charter variant (`full`/`lite`) for cost experiments. Tests:
++  `scripts/tests/test_token_usage.sh`, `scripts/tests/test_issue_cost.sh`.
+ - Add: **Boba Fett as L2 support — support-triage of `user-report` issues**
+   (2026-07-13). Gives the snapdex#526 in-app user-report queue an owner. New shared
+   skill **`skills/triage-support.md`** + a new dispatch stage **`needs-support-triage`**:
+diff --git a/CHARTER.md b/CHARTER.md
+index 241d1c6..8ec936e 100644
+--- a/CHARTER.md
++++ b/CHARTER.md
+@@ -292,7 +292,7 @@ Boba Fett's `state:parked` filing path (line 30) is the original opt-in clearanc
+ The team mirrors its comms into a Discord **Forum channel `falcon-dev`** as threads-per-issue. This is additive to the Telegram + Lando model — it changes none of it. Telegram remains every agent's wake path; Lando remains the sole decision interface; Discord is the parallel team surface (Phase 1.5 = outbound only).
+ 
+ - **One thread per PARENT ISSUE — never per PR.** The issue is the unit: every stage (Yoda/Obi-wan/Ackbar refining it → builders' 1+ PRs → Chewie's review → delivery) posts under the SAME issue thread. `ensure-thread` auto-resolves a PR ref to its parent issue (via `closes #N`), so PR-keyed dispatches (review/deploy) land on the issue thread, not a separate one.
+-- **Lando bookends every issue thread.** Lando opens each thread with a **kickoff card** (issue link + plain-language description of what the issue is) and closes it with a **completion summary** (issue + merged-PR link(s); which agents contributed by role — architecture/impl/test/deploy; total spec→ship time; total cost (est.) from Kyber's metrics API).
++- **Lando bookends every issue thread.** Lando opens each thread with a **kickoff card** (issue link + plain-language description of what the issue is) followed by a **mini-charter card** (🧭 Team plan: scope, the planned crew by role from `config/team-roster.yaml`, models, and the active charter variant — mirrored machine-readably as `<!-- falcon:charter:v1 … -->` on the issue body, CONTRACTS §10), and closes it with a **completion summary** (issue + merged-PR link(s); which agents contributed by role — architecture/impl/test/deploy; total spec→ship time; **total cost computed from the workers' per-stage `falcon:usage:v1` self-reports**, priced from the vendored rates snapshot (`config/provider-rates.yaml`, a verbatim copy of Kyber's generated feed with its provenance stamp), cross-checked against Kyber's metrics API with any discrepancy labeled — and the same figures appended as a row to Lando's durable ledger, `lando-agent/reports/cost-ledger.jsonl`).
+ - **Every agent posts its own stage** — INTENT on pickup, OUTCOME on completion — in the **Format Standard** (terse human bullets, no jargon, leading emoji, ≤4 bullets; see `skills/discord-post.md` § Post format). Kickbacks are posted too.
+ - **Lando never duplicates** another agent's post. Lando posts only the kickoff, its own coordination/decisions/kickbacks, the completion summary, and release cards — never a restatement of a worker's update.
+ - **Releases** get a dedicated thread: each published release posts a card with the version + bulleted notes (issues landed, one terse human bullet each).
+@@ -321,13 +321,21 @@ to its Discord post and its Lando ack — those are unchanged):
+ ```
+ <!-- falcon:pickup -->
+ **<Agent>** picked up `<stage>` · ETA <estimate> · envelope `<envelope_id>`
++<!-- falcon:usage-baseline:v1 {…} -->
+ ```
+ ```
+ <!-- falcon:complete -->
+ **<Agent>** finished `<stage>` · outcome `<success|error|held>` · envelope `<envelope_id>`
++<!-- falcon:usage:v1 {…} -->
+ ```
+ 
+ - **The HTML comment marker is load-bearing** — `/recover-stalls` parses on it. Do not reformat it.
++- **The usage markers are load-bearing too** (cost tracking, added by Dave per Matt, 2026-08-07):
++  the baseline line makes a stage's token accounting survive a pod recycle, and the report line is
++  what Lando aggregates into the issue's final cost at close. Shapes and truthfulness rules are
++  NORMATIVE in CONTRACTS §10; they are produced by `scripts/token-usage.sh`, never written by hand.
++  A missing usage line is loudly logged but never blocks the comment — and downstream it renders as
++  "unavailable", never as a made-up number.
+ - **ETA must be explicit and unit-bearing** (`45m`, `2h`, `60-90m`). A stall is measured against it.
+ - **Recovery attempts are recorded the same way** (`<!-- falcon:recovery -->`, carrying the retry
+   count and the new envelope id). This is what stops a post-reboot rebuild from re-dispatching a
+diff --git a/CONTRACTS.md b/CONTRACTS.md
+index dac3b74..c757665 100644
+--- a/CONTRACTS.md
++++ b/CONTRACTS.md
+@@ -431,6 +431,9 @@ hours 10pm–6am Detroit queue routine messages; approval prompts and errors alw
+ | Outer-perimeter QA, repro, perf; files `state:parked` findings; `/hand-to-lando` promotion | **Boba Fett** | not in the pipeline; no cron; Matt-DM intake |
+ | `falcon-dev-common` (CHARTER, shared skills, hooks, minter, profiles), agent-repo upkeep, devenv infra | **Dave** (off-cluster) | team READS the vendored copy, never writes; out-of-scope intake escalates to Matt/Dave |
+ | Merge approval, clearance (`state:parked` removal), prod go/no-go, new repos/credentials | **Matt** | the single human gate(s) |
++| Per-stage token self-report (`falcon:usage-baseline:v1` at pickup, `falcon:usage:v1` at completion, via `scripts/token-usage.sh`) | **every worker** | never posted for another agent; never hand-written |
++| Mini-charter (`falcon:charter:v1` + 🧭 card), final-cost aggregation + pricing + metrics cross-check, `reports/cost-ledger.jsonl` | **Lando** | workers never price or total — they report raw counts |
++| Rates snapshot (`config/provider-rates.yaml` + `.meta`, verbatim from Kyber's generated feed) + `config/team-roster.yaml` + `VARIANT` | **Dave/Matt** | never hand-typed prices (Matt, 2026-06-07); refreshed alongside Kyber's weekly rates PR |
+ 
+ Scope: ONLY `kyber`, `kyber-deploy`, `holocron`, `snapdex` (closed list, CHARTER § Repo
+ scope). Enforced at dispatch time — `dispatch.md` Step 1b refuses ANY out-of-scope
+@@ -600,7 +603,75 @@ HMAC keys are Kyber user-secrets (`USER_*` env vars); there is no `/etc/falcon/i
+     close the reopened issue on `operational`, fire the delivery-path F5) and a real
+     `release-notes-needed` trigger.
+ 
++## 10. Cost-telemetry markers **[NORMATIVE]** (added 2026-08-07)
++
++Cost tracking rides the GitHub comment/body markers — **the 5-field ack (§2) is unchanged**
++(Kyber's `worker-acks` binding renders only its declared fields; usage travels where the durable
++record already lives). Three markers, all single-line hidden HTML comments with inline JSON, all
++machine-produced (`scripts/token-usage.sh` for the first two; Lando for the third). If serialized
++JSON ever contains `--`, the producer falls back to a bare marker + fenced ```json block.
++
++### 10.1 `falcon:usage-baseline:v1` — worker, INSIDE the `falcon:pickup` comment
++
++The worker's transcript odometer at stage pickup. Written by `token-usage.sh baseline
++<envelope_id> --marker`. Cached in the identity repo's `.runtime/`; the comment copy is the
++recovery source after a pod recycle.
++
++```json
++{"v":1,"envelope_id":"…","taken_at":"<iso8601>",
++ "files":{"<transcript path>":{"size":123,"models":{"<model>":{"input":0,"output":0,"cache_read":0,"cache_creation":0,"api_calls":0}}}},
++ "totals":{"<model>":{"input":0,"output":0,"cache_read":0,"cache_creation":0,"api_calls":0}}}
++```
++
++### 10.2 `falcon:usage:v1` — worker, INSIDE the `falcon:complete` comment
++
++The stage's usage delta (now − baseline), per ACTUAL model from the transcript (planned models
++live in the mini-charter; Lando flags mismatches). Written by `token-usage.sh report
++<envelope_id> --stage <stage_label> --issue <owner/repo#N> --marker`. Review/deploy stages post
++it on the PR (with their completion comment); Lando's close-path aggregation reads the issue AND
++its linked PRs.
++
++```json
++{"v":1,"agent":"han","envelope_id":"…","stage_label":"ready-for-implementation",
++ "issue":"matty-v/snapdex#42","window":{"from":"<iso8601>","to":"<iso8601>"},
++ "models":{"claude-sonnet-4-5":{"input":812345,"output":41210,"cache_read":9130221,"cache_creation":420110,"api_calls":63}},
++ "charter_variant":"full@9c63b54","quality":"exact","reason":null}
++```
++
++**Truthfulness ladder (NORMATIVE — extends the no-fabrication directive, Matt 2026-06-07):**
++`quality` is `exact` (intact transcript tree), `lower_bound` (files rotated/compacted mid-stage
++were EXCLUDED — the figure is a floor, `reason` says why), or `unavailable` (no baseline / nothing
++measurable — `models` is empty). Consumers render `unavailable` as
++`token usage: unavailable (<reason>)` and `lower_bound` with a `≥` prefix. **Never 0, never a
++guess, never a hand-edited marker.**
++
++### 10.3 `falcon:charter:v1` — Lando, appended to the ISSUE BODY at kickoff
++
++The mini-charter: scope + planned crew (from `config/team-roster.yaml`) + active charter variant.
++Same idiom as the `<!-- discord-thread: <id> -->` marker. Human twin: the 🧭 Team-plan card in
++the issue's Discord thread.
++
++```json
++{"v":1,"issue":"matty-v/snapdex#42","kickoff_at":"<iso8601>",
++ "planned":[{"agent":"yoda","role":"product-triage","model":"claude-sonnet-4-5"}],
++ "charter_variant":"full@9c63b54"}
++```
++
++### 10.4 Close-path aggregation (Lando, process-worker-ack Step 6b)
++
++At issue close Lando: collects every `falcon:usage:v1` on the issue + linked PRs (duplicate
++envelope_ids are ALL kept — re-dispatch is real kickback spend); prices per model from
++`config/provider-rates.yaml` (suffix-normalized lookup; a model with no rate renders **unpriced**
++and the total is flagged partial — never $0.00; `rates_provenance` from `.meta` travels with every
++total); cross-checks Kyber's windowed metrics API and LABELS any discrepancy (e.g. "platform
++metric excludes output tokens") instead of averaging it away; posts the completion-summary cost
++lines; appends one JSON line to `lando-agent/reports/cost-ledger.jsonl` (committed with the ship
++report). Any `unavailable` stage forces `totals.priced:false`, `cost_usd:null`, and an honest
++"cost: partial" card. The ledger row shape is documented in `lando-agent/skills/
++process-worker-ack.md` Step 6b.
++
+ ---
+ 
+ *Maintained by Dave (falcon-dev-common owner). Changes to any wire shape in §§1–7 are a
+-breaking change to every agent and require a coordinated vendor-bundle roll.*
++breaking change to every agent and require a coordinated vendor-bundle roll. §10 marker shapes
++are versioned in-name (`:v1`) — additive evolution mints `:v2` rather than mutating `:v1`.*
+diff --git a/VARIANT b/VARIANT
+new file mode 100644
+index 0000000..2877147
+--- /dev/null
++++ b/VARIANT
+@@ -0,0 +1 @@
++full
+diff --git a/config/provider-rates.meta b/config/provider-rates.meta
+new file mode 100644
+index 0000000..f6634de
+--- /dev/null
++++ b/config/provider-rates.meta
+@@ -0,0 +1,7 @@
++source: litellm
++upstream_repo: BerriAI/litellm
++upstream_file: model_prices_and_context_window.json
++upstream_commit: 8447cd3ad39817bee0cdf0b3272ff8d2a36f88a8
++fetched_at: 2026-07-13T07:01:47Z
++model_count: 161
++rejected_count: 81
+diff --git a/config/provider-rates.yaml b/config/provider-rates.yaml
+new file mode 100644
+index 0000000..be845fa
+--- /dev/null
++++ b/config/provider-rates.yaml
+@@ -0,0 +1,651 @@
++# Provider token rates — USD per 1 million tokens.
++# GENERATED by cmd/fetch-provider-rates — DO NOT EDIT BY HAND (kyber#487).
++# Source: LiteLLM model_prices_and_context_window.json (MIT license),
++#   github.com/BerriAI/litellm — projected to kyber ProviderRates at build time.
++# Upstream commit: 8447cd3ad39817bee0cdf0b3272ff8d2a36f88a8
++# Fetched: 2026-07-13T07:01:47Z
++# Models: 161 (providers: anthropic, openai) | rejected by sanity bounds: 81
++chatgpt-4o-latest:
++    input: 5
++    output: 15
++    cache_read: 0
++claude-3-7-sonnet-20250219:
++    input: 3
++    output: 15
++    cache_read: 0.3
++claude-3-haiku-20240307:
++    input: 0.25
++    output: 1.25
++    cache_read: 0.03
++claude-3-opus-20240229:
++    input: 15
++    output: 75
++    cache_read: 1.5
++claude-4-opus-20250514:
++    input: 15
++    output: 75
++    cache_read: 1.5
++claude-4-sonnet-20250514:
++    input: 3
++    output: 15
++    cache_read: 0.3
++claude-fable-5:
++    input: 10
++    output: 50
++    cache_read: 1
++claude-haiku-4-5:
++    input: 1
++    output: 5
++    cache_read: 0.1
++claude-haiku-4-5-20251001:
++    input: 1
++    output: 5
++    cache_read: 0.1
++claude-opus-4-1:
++    input: 15
++    output: 75
++    cache_read: 1.5
++claude-opus-4-1-20250805:
++    input: 15
++    output: 75
++    cache_read: 1.5
++claude-opus-4-5:
++    input: 5
++    output: 25
++    cache_read: 0.5
++claude-opus-4-5-20251101:
++    input: 5
++    output: 25
++    cache_read: 0.5
++claude-opus-4-6:
++    input: 5
++    output: 25
++    cache_read: 0.5
++claude-opus-4-6-20260205:
++    input: 5
++    output: 25
++    cache_read: 0.5
++claude-opus-4-7:
++    input: 5
++    output: 25
++    cache_read: 0.5
++claude-opus-4-7-20260416:
++    input: 5
++    output: 25
++    cache_read: 0.5
++claude-opus-4-8:
++    input: 5
++    output: 25
++    cache_read: 0.5
++claude-opus-4-20250514:
++    input: 15
++    output: 75
++    cache_read: 1.5
++claude-sonnet-4-5:
++    input: 3
++    output: 15
++    cache_read: 0.3
++claude-sonnet-4-5-20250929:
++    input: 3
++    output: 15
++    cache_read: 0.3
++claude-sonnet-4-6:
++    input: 3
++    output: 15
++    cache_read: 0.3
++claude-sonnet-4-20250514:
++    input: 3
++    output: 15
++    cache_read: 0.3
++claude-sonnet-5:
++    input: 2
++    output: 10
++    cache_read: 0.2
++codex-mini-latest:
++    input: 1.5
++    output: 6
++    cache_read: 0.375
++ft:gpt-3.5-turbo:
++    input: 3
++    output: 6
++    cache_read: 0
++ft:gpt-3.5-turbo-0125:
++    input: 3
++    output: 6
++    cache_read: 0
++ft:gpt-3.5-turbo-0613:
++    input: 3
++    output: 6
++    cache_read: 0
++ft:gpt-3.5-turbo-1106:
++    input: 3
++    output: 6
++    cache_read: 0
++ft:gpt-4o-2024-08-06:
++    input: 3.75
++    output: 15
++    cache_read: 1.875
++ft:gpt-4o-2024-11-20:
++    input: 3.75
++    output: 15
++    cache_read: 0
++ft:gpt-4o-mini-2024-07-18:
++    input: 0.3
++    output: 1.2
++    cache_read: 0.15
++ft:gpt-4-0613:
++    input: 30
++    output: 60
++    cache_read: 0
++ft:gpt-4.1-2025-04-14:
++    input: 3
++    output: 12
++    cache_read: 0.75
++ft:gpt-4.1-mini-2025-04-14:
++    input: 0.8
++    output: 3.2
++    cache_read: 0.2
++ft:gpt-4.1-nano-2025-04-14:
++    input: 0.2
++    output: 0.8
++    cache_read: 0.05
++ft:o4-mini-2025-04-16:
++    input: 4
++    output: 16
++    cache_read: 1
++gpt-3.5-turbo:
++    input: 0.5
++    output: 1.5
++    cache_read: 0
++gpt-3.5-turbo-16k:
++    input: 3
++    output: 4
++    cache_read: 0
++gpt-3.5-turbo-0125:
++    input: 0.5
++    output: 1.5
++    cache_read: 0
++gpt-3.5-turbo-1106:
++    input: 1
++    output: 2
++    cache_read: 0
++gpt-4:
++    input: 30
++    output: 60
++    cache_read: 0
++gpt-4o:
++    input: 2.5
++    output: 10
++    cache_read: 1.25
++gpt-4o-2024-05-13:
++    input: 5
++    output: 15
++    cache_read: 0
++gpt-4o-2024-08-06:
++    input: 2.5
++    output: 10
++    cache_read: 1.25
++gpt-4o-2024-11-20:
++    input: 2.5
++    output: 10
++    cache_read: 1.25
++gpt-4o-audio-preview:
++    input: 2.5
++    output: 10
++    cache_read: 0
++gpt-4o-audio-preview-2024-12-17:
++    input: 2.5
++    output: 10
++    cache_read: 0
++gpt-4o-audio-preview-2025-06-03:
++    input: 2.5
++    output: 10
++    cache_read: 0
++gpt-4o-mini:
++    input: 0.15
++    output: 0.6
++    cache_read: 0.075
++gpt-4o-mini-2024-07-18:
++    input: 0.15
++    output: 0.6
++    cache_read: 0.075
++gpt-4o-mini-audio-preview:
++    input: 0.15
++    output: 0.6
++    cache_read: 0
++gpt-4o-mini-audio-preview-2024-12-17:
++    input: 0.15
++    output: 0.6
++    cache_read: 0
++gpt-4o-mini-realtime-preview:
++    input: 0.6
++    output: 2.4
++    cache_read: 0.3
++gpt-4o-mini-realtime-preview-2024-12-17:
++    input: 0.6
++    output: 2.4
++    cache_read: 0.3
++gpt-4o-mini-search-preview:
++    input: 0.15
++    output: 0.6
++    cache_read: 0.075
++gpt-4o-mini-search-preview-2025-03-11:
++    input: 0.15
++    output: 0.6
++    cache_read: 0.075
++gpt-4o-mini-transcribe:
++    input: 1.25
++    output: 5
++    cache_read: 0
++gpt-4o-mini-transcribe-2025-03-20:
++    input: 1.25
++    output: 5
++    cache_read: 0
++gpt-4o-mini-transcribe-2025-12-15:
++    input: 1.25
++    output: 5
++    cache_read: 0
++gpt-4o-mini-tts:
++    input: 2.5
++    output: 10
++    cache_read: 0
++gpt-4o-mini-tts-2025-03-20:
++    input: 2.5
++    output: 10
++    cache_read: 0
++gpt-4o-mini-tts-2025-12-15:
++    input: 2.5
++    output: 10
++    cache_read: 0
++gpt-4o-realtime-preview:
++    input: 5
++    output: 20
++    cache_read: 2.5
++gpt-4o-realtime-preview-2024-12-17:
++    input: 5
++    output: 20
++    cache_read: 2.5
++gpt-4o-realtime-preview-2025-06-03:
++    input: 5
++    output: 20
++    cache_read: 2.5
++gpt-4o-search-preview:
++    input: 2.5
++    output: 10
++    cache_read: 1.25
++gpt-4o-search-preview-2025-03-11:
++    input: 2.5
++    output: 10
++    cache_read: 1.25
++gpt-4o-transcribe:
++    input: 2.5
++    output: 10
++    cache_read: 0
++gpt-4o-transcribe-diarize:
++    input: 2.5
++    output: 10
++    cache_read: 0
++gpt-4-0125-preview:
++    input: 10
++    output: 30
++    cache_read: 0
++gpt-4-0314:
++    input: 30
++    output: 60
++    cache_read: 0
++gpt-4-0613:
++    input: 30
++    output: 60
++    cache_read: 0
++gpt-4-1106-preview:
++    input: 10
++    output: 30
++    cache_read: 0
++gpt-4-turbo:
++    input: 10
++    output: 30
++    cache_read: 0
++gpt-4-turbo-2024-04-09:
++    input: 10
++    output: 30
++    cache_read: 0
++gpt-4-turbo-preview:
++    input: 10
++    output: 30
++    cache_read: 0
++gpt-4.1:
++    input: 2
++    output: 8
++    cache_read: 0.5
++gpt-4.1-2025-04-14:
++    input: 2
++    output: 8
++    cache_read: 0.5
++gpt-4.1-mini:
++    input: 0.4
++    output: 1.6
++    cache_read: 0.1
++gpt-4.1-mini-2025-04-14:
++    input: 0.4
++    output: 1.6
++    cache_read: 0.1
++gpt-4.1-nano:
++    input: 0.1
++    output: 0.4
++    cache_read: 0.025
++gpt-4.1-nano-2025-04-14:
++    input: 0.1
++    output: 0.4
++    cache_read: 0.025
++gpt-5:
++    input: 1.25
++    output: 10
++    cache_read: 0.125
++gpt-5-2025-08-07:
++    input: 1.25
++    output: 10
++    cache_read: 0.125
++gpt-5-chat:
++    input: 1.25
++    output: 10
++    cache_read: 0.125
++gpt-5-chat-latest:
++    input: 1.25
++    output: 10
++    cache_read: 0.125
++gpt-5-codex:
++    input: 1.25
++    output: 10
++    cache_read: 0.125
++gpt-5-mini:
++    input: 0.25
++    output: 2
++    cache_read: 0.025
++gpt-5-mini-2025-08-07:
++    input: 0.25
++    output: 2
++    cache_read: 0.025
++gpt-5-nano:
++    input: 0.05
++    output: 0.4
++    cache_read: 0.005
++gpt-5-nano-2025-08-07:
++    input: 0.05
++    output: 0.4
++    cache_read: 0.005
++gpt-5-pro:
++    input: 15
++    output: 120
++    cache_read: 0
++gpt-5-pro-2025-10-06:
++    input: 15
++    output: 120
++    cache_read: 0
++gpt-5-search-api:
++    input: 1.25
++    output: 10
++    cache_read: 0.125
++gpt-5-search-api-2025-10-14:
++    input: 1.25
++    output: 10
++    cache_read: 0.125
++gpt-5.1:
++    input: 1.25
++    output: 10
++    cache_read: 0.125
++gpt-5.1-2025-11-13:
++    input: 1.25
++    output: 10
++    cache_read: 0.125
++gpt-5.1-chat-latest:
++    input: 1.25
++    output: 10
++    cache_read: 0.125
++gpt-5.1-codex:
++    input: 1.25
++    output: 10
++    cache_read: 0.125
++gpt-5.1-codex-max:
++    input: 1.25
++    output: 10
++    cache_read: 0.125
++gpt-5.1-codex-mini:
++    input: 0.25
++    output: 2
++    cache_read: 0.025
++gpt-5.2:
++    input: 1.75
++    output: 14
++    cache_read: 0.175
++gpt-5.2-2025-12-11:
++    input: 1.75
++    output: 14
++    cache_read: 0.175
++gpt-5.2-chat-latest:
++    input: 1.75
++    output: 14
++    cache_read: 0.175
++gpt-5.2-codex:
++    input: 1.75
++    output: 14
++    cache_read: 0.175
++gpt-5.2-pro:
++    input: 21
++    output: 168
++    cache_read: 0
++gpt-5.2-pro-2025-12-11:
++    input: 21
++    output: 168
++    cache_read: 0
++gpt-5.3-chat-latest:
++    input: 1.75
++    output: 14
++    cache_read: 0.175
++gpt-5.3-codex:
++    input: 1.75
++    output: 14
++    cache_read: 0.175
++gpt-5.4:
++    input: 2.5
++    output: 15
++    cache_read: 0.25
++gpt-5.4-2026-03-05:
++    input: 2.5
++    output: 15
++    cache_read: 0.25
++gpt-5.4-mini:
++    input: 0.75
++    output: 4.5
++    cache_read: 0.075
++gpt-5.4-mini-2026-03-17:
++    input: 0.75
++    output: 4.5
++    cache_read: 0.075
++gpt-5.4-nano:
++    input: 0.2
++    output: 1.25
++    cache_read: 0.02
++gpt-5.4-nano-2026-03-17:
++    input: 0.2
++    output: 1.25
++    cache_read: 0.02
++gpt-5.4-pro:
++    input: 30
++    output: 180
++    cache_read: 3
++gpt-5.4-pro-2026-03-05:
++    input: 30
++    output: 180
++    cache_read: 3
++gpt-5.5:
++    input: 5
++    output: 30
++    cache_read: 0.5
++gpt-5.5-2026-04-23:
++    input: 5
++    output: 30
++    cache_read: 0.5
++gpt-5.5-pro:
++    input: 30
++    output: 180
++    cache_read: 3
++gpt-5.5-pro-2026-04-23:
++    input: 30
++    output: 180
++    cache_read: 3
++gpt-5.6:
++    input: 5
++    output: 30
++    cache_read: 0.5
++gpt-5.6-luna:
++    input: 1
++    output: 6
++    cache_read: 0.1
++gpt-5.6-sol:
++    input: 5
++    output: 30
++    cache_read: 0.5
++gpt-5.6-terra:
++    input: 2.5
++    output: 15
++    cache_read: 0.25
++gpt-audio:
++    input: 2.5
++    output: 10
++    cache_read: 0
++gpt-audio-1.5:
++    input: 2.5
++    output: 10
++    cache_read: 0
++gpt-audio-2025-08-28:
++    input: 2.5
++    output: 10
++    cache_read: 0
++gpt-audio-mini:
++    input: 0.6
++    output: 2.4
++    cache_read: 0
++gpt-audio-mini-2025-10-06:
++    input: 0.6
++    output: 2.4
++    cache_read: 0
++gpt-audio-mini-2025-12-15:
++    input: 0.6
++    output: 2.4
++    cache_read: 0
++gpt-image-1.5:
++    input: 5
++    output: 10
++    cache_read: 1.25
++gpt-image-1.5-2025-12-16:
++    input: 5
++    output: 10
++    cache_read: 1.25
++gpt-image-2:
++    input: 5
++    output: 10
++    cache_read: 1.25
++gpt-image-2-2026-04-21:
++    input: 5
++    output: 10
++    cache_read: 1.25
++gpt-realtime:
++    input: 4
++    output: 16
++    cache_read: 0.4
++gpt-realtime-1.5:
++    input: 4
++    output: 16
++    cache_read: 0.4
++gpt-realtime-2:
++    input: 4
++    output: 16
++    cache_read: 0.4
++gpt-realtime-2.1:
++    input: 4
++    output: 24
++    cache_read: 0.4
++gpt-realtime-2.1-mini:
++    input: 0.6
++    output: 2.4
++    cache_read: 0.06
++gpt-realtime-2025-08-28:
++    input: 4
++    output: 16
++    cache_read: 0.4
++gpt-realtime-mini:
++    input: 0.6
++    output: 2.4
++    cache_read: 0
++gpt-realtime-mini-2025-10-06:
++    input: 0.6
++    output: 2.4
++    cache_read: 0.06
++gpt-realtime-mini-2025-12-15:
++    input: 0.6
++    output: 2.4
++    cache_read: 0.06
++o1:
++    input: 15
++    output: 60
++    cache_read: 7.5
++o1-2024-12-17:
++    input: 15
++    output: 60
++    cache_read: 7.5
++o1-pro:
++    input: 150
++    output: 600
++    cache_read: 0
++o1-pro-2025-03-19:
++    input: 150
++    output: 600
++    cache_read: 0
++o3:
++    input: 2
++    output: 8
++    cache_read: 0.5
++o3-2025-04-16:
++    input: 2
++    output: 8
++    cache_read: 0.5
++o3-deep-research:
++    input: 10
++    output: 40
++    cache_read: 2.5
++o3-deep-research-2025-06-26:
++    input: 10
++    output: 40
++    cache_read: 2.5
++o3-mini:
++    input: 1.1
++    output: 4.4
++    cache_read: 0.55
++o3-mini-2025-01-31:
++    input: 1.1
++    output: 4.4
++    cache_read: 0.55
++o3-pro:
++    input: 20
++    output: 80
++    cache_read: 0
++o3-pro-2025-06-10:
++    input: 20
++    output: 80
++    cache_read: 0
++o4-mini:
++    input: 1.1
++    output: 4.4
++    cache_read: 0.275
++o4-mini-2025-04-16:
++    input: 1.1
++    output: 4.4
++    cache_read: 0.275
++o4-mini-deep-research:
++    input: 2
++    output: 8
++    cache_read: 0.5
++o4-mini-deep-research-2025-06-26:
++    input: 2
++    output: 8
++    cache_read: 0.5
+diff --git a/config/team-roster.yaml b/config/team-roster.yaml
+new file mode 100644
+index 0000000..77c7e87
+--- /dev/null
++++ b/config/team-roster.yaml
+@@ -0,0 +1,31 @@
++# team-roster.yaml — the PLANNED crew: agent → pipeline role + configured model.
++# Consumed by Lando's mini-charter (falcon:charter:v1) at issue kickoff.
++# This is configuration Matt owns, not cost data: ACTUAL models come from each
++# worker's transcript-based self-report (falcon:usage:v1), and Lando flags any
++# planned≠actual mismatch in the ledger. Keep in sync with each agent's
++# config/kyber/agent-spec.json when models change.
++roster:
++  lando:
++    role: orchestrator
++    model: claude-sonnet-4
++  yoda:
++    role: product-triage
++    model: claude-sonnet-4-5
++  obi-wan:
++    role: architecture
++    model: claude-sonnet-4-5
++  han:
++    role: builder
++    model: claude-sonnet-4-5
++  luke:
++    role: builder
++    model: claude-sonnet-4-5
++  chewie:
++    role: review
++    model: claude-sonnet-4-5
++  ackbar:
++    role: deploy-release
++    model: claude-sonnet-4-5
++  boba-fett:
++    role: qa
++    model: claude-sonnet-4-5
+diff --git a/scripts/issue-cost.sh b/scripts/issue-cost.sh
+new file mode 100755
+index 0000000..3cb1962
+--- /dev/null
++++ b/scripts/issue-cost.sh
+@@ -0,0 +1,260 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++# issue-cost.sh — aggregate an issue's per-stage token self-reports into the
++# final-cost ledger row (cost tracking, CONTRACTS §10.4). Lando-only; called
++# from process-worker-ack.md Step 6b at issue close.
++#
++#   issue-cost.sh <owner/repo#N> [--pr <num>]... [--metrics-json <file>]
++#                 [--title <text>] [--wall-clock-s <secs>] [--kickbacks <n>]
++#                 [--report-path <path>]
++#
++# Reads:
++#   - the issue's comments + body (and each --pr's comments) via the App-token
++#     wrapper — collecting every  <!-- falcon:usage:v1 … -->  marker and the
++#     <!-- falcon:charter:v1 … -->  mini-charter
++#   - config/provider-rates.yaml (+ .meta provenance) — the vendored verbatim
++#     copy of Kyber's GENERATED rate table (never hand-typed; Matt 2026-06-07)
++#   - optionally a metrics-API response file (Lando fetches it — this script
++#     has no cluster creds) for the independent cross-check
++#
++# Prints ONE JSON ledger row to stdout — append it verbatim to
++# lando-agent/reports/cost-ledger.jsonl. Truthfulness rules (NORMATIVE):
++# any stage with quality "unavailable" forces totals.priced=false and
++# cost_usd=null; models absent from the rate table render unpriced (never
++# $0.00); every exclusion is named in totals.cost_notes.
++#
++# Env overrides (tests): FALCON_RATES_FILE, FALCON_RATES_META, FALCON_GH_ISSUE.
++
++SCRIPT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
++RATES_FILE="${FALCON_RATES_FILE:-${SCRIPT_ROOT}/config/provider-rates.yaml}"
++RATES_META="${FALCON_RATES_META:-${SCRIPT_ROOT}/config/provider-rates.meta}"
++GH="${FALCON_GH_ISSUE:-${SCRIPT_ROOT}/hooks/gh-issue.sh}"
++
++usage() { sed -n '3,12p' "$0"; exit 2; }
++
++[[ $# -lt 1 ]] && usage
++ISSUE="$1"; shift
++REPO="${ISSUE%#*}"; NUM="${ISSUE##*#}"
++
++PRS=(); METRICS_FILE=""; TITLE=""; WALL=""; KICKBACKS=""; REPORT_PATH=""
++while [[ $# -gt 0 ]]; do
++  case "$1" in
++    --pr) PRS+=("$2"); shift 2 ;;
++    --metrics-json) METRICS_FILE="$2"; shift 2 ;;
++    --title) TITLE="$2"; shift 2 ;;
++    --wall-clock-s) WALL="$2"; shift 2 ;;
++    --kickbacks) KICKBACKS="$2"; shift 2 ;;
++    --report-path) REPORT_PATH="$2"; shift 2 ;;
++    *) usage ;;
++  esac
++done
++
++WORK="$(mktemp -d)"
++trap 'rm -rf "${WORK}"' EXIT
++
++# Comments from the issue and every linked PR (the issues comments endpoint
++# serves both), plus the issue body (mini-charter marker lives there).
++"$GH" api "repos/${REPO}/issues/${NUM}/comments" --paginate > "${WORK}/comments-issue.json" 2>/dev/null || echo '[]' > "${WORK}/comments-issue.json"
++"$GH" api "repos/${REPO}/issues/${NUM}" > "${WORK}/issue.json" 2>/dev/null || echo '{}' > "${WORK}/issue.json"
++for pr in "${PRS[@]:-}"; do
++  [[ -z "${pr}" ]] && continue
++  "$GH" api "repos/${REPO}/issues/${pr}/comments" --paginate > "${WORK}/comments-pr-${pr}.json" 2>/dev/null || echo '[]' > "${WORK}/comments-pr-${pr}.json"
++done
++[[ -n "${METRICS_FILE}" && -r "${METRICS_FILE}" ]] && cp "${METRICS_FILE}" "${WORK}/metrics.json"
++
++ISSUE_ARG="${ISSUE}" TITLE_ARG="${TITLE}" WALL_ARG="${WALL}" KICK_ARG="${KICKBACKS}" \
++REPORT_ARG="${REPORT_PATH}" RATES_FILE_ARG="${RATES_FILE}" RATES_META_ARG="${RATES_META}" \
++python3 - "${WORK}" <<'PYEOF'
++import glob, json, os, re, sys
++from datetime import datetime, timezone
++
++work = sys.argv[1]
++issue = os.environ["ISSUE_ARG"]
++
++# ---- rate table (flat generated YAML: "model:" at col 0, "    key: num") ----
++def load_rates(path):
++    rates, model = {}, None
++    try:
++        with open(path) as f:
++            for line in f:
++                if not line.strip() or line.lstrip().startswith("#"):
++                    continue
++                if not line.startswith((" ", "\t")) and line.rstrip().endswith(":"):
++                    model = line.strip()[:-1]
++                    rates[model] = {}
++                elif model and ":" in line:
++                    k, v = line.strip().split(":", 1)
++                    try:
++                        rates[model][k.strip()] = float(v)
++                    except ValueError:
++                        pass
++    except OSError:
++        pass
++    return rates
++
++def load_meta(path):
++    meta = {}
++    try:
++        with open(path) as f:
++            for line in f:
++                if ":" in line and not line.lstrip().startswith("#"):
++                    k, v = line.split(":", 1)
++                    meta[k.strip()] = v.strip()
++    except OSError:
++        pass
++    return meta
++
++rates = load_rates(os.environ["RATES_FILE_ARG"])
++meta = load_meta(os.environ["RATES_META_ARG"])
++DATE_SUFFIX = re.compile(r"-\d{8}$")
++
++def lookup(model):
++    if model in rates:
++        return rates[model]
++    stripped = DATE_SUFFIX.sub("", model)
++    if stripped in rates:
++        return rates[stripped]
++    for k, v in rates.items():          # table key carries the date suffix
++        if DATE_SUFFIX.sub("", k) == model:
++            return v
++    return None
++
++# ---- collect markers -------------------------------------------------------
++USAGE = re.compile(r"<!-- falcon:usage:v1 (\{.*?\}) -->", re.S)
++USAGE_FENCED = re.compile(r"<!-- falcon:usage:v1 -->\s*```json\s*(\{.*?\})\s*```", re.S)
++CHARTER = re.compile(r"<!-- falcon:charter:v1 (\{.*?\}) -->", re.S)
++
++reports, charter = [], None
++bodies = []
++for path in sorted(glob.glob(os.path.join(work, "comments-*.json"))):
++    try:
++        data = json.load(open(path))
++    except ValueError:
++        continue
++    bodies += [c.get("body") or "" for c in data if isinstance(c, dict)]
++try:
++    issue_obj = json.load(open(os.path.join(work, "issue.json")))
++except ValueError:
++    issue_obj = {}
++issue_body = issue_obj.get("body") or ""
++
++for body in bodies:
++    for pat in (USAGE, USAGE_FENCED):
++        for m in pat.finditer(body):
++            try:
++                r = json.loads(m.group(1))
++            except ValueError:
++                continue
++            if r.get("v") == 1:
++                reports.append(r)
++m = CHARTER.search(issue_body)
++if m:
++    try:
++        charter = json.loads(m.group(1))
++    except ValueError:
++        charter = None
++
++# ---- price -----------------------------------------------------------------
++TYPES = ("input", "output", "cache_read", "cache_creation")
++totals = {t: 0 for t in TYPES}
++cost = 0.0
++priced = True
++notes = []
++stages = []
++variants = set()
++unpriced_models, no_cc_rate = set(), set()
++
++for r in reports:
++    q = r.get("quality") or "unavailable"
++    stage = {"stage": r.get("stage_label"), "agent": r.get("agent"),
++             "envelope_id": r.get("envelope_id"), "quality": q,
++             "reason": r.get("reason"), "models": r.get("models") or {},
++             "from": (r.get("window") or {}).get("from"),
++             "to": (r.get("window") or {}).get("to")}
++    stages.append(stage)
++    if r.get("charter_variant"):
++        variants.add(r["charter_variant"])
++    if q == "unavailable":
++        priced = False
++        notes.append("%s/%s: usage unavailable (%s)" % (r.get("agent"), r.get("stage_label"), r.get("reason")))
++        continue
++    if q == "lower_bound":
++        notes.append("%s/%s: lower bound (%s)" % (r.get("agent"), r.get("stage_label"), r.get("reason")))
++    for model, c in (r.get("models") or {}).items():
++        for t in TYPES:
++            totals[t] += int(c.get(t) or 0)
++        rt = lookup(model)
++        if rt is None:
++            priced = False
++            unpriced_models.add(model)
++            continue
++        cost += (c.get("input") or 0) * rt.get("input", 0.0) / 1e6
++        cost += (c.get("output") or 0) * rt.get("output", 0.0) / 1e6
++        cost += (c.get("cache_read") or 0) * rt.get("cache_read", 0.0) / 1e6
++        if "cache_creation" in rt:
++            cost += (c.get("cache_creation") or 0) * rt["cache_creation"] / 1e6
++        elif c.get("cache_creation"):
++            no_cc_rate.add(model)
++
++for m_ in sorted(unpriced_models):
++    notes.append("model %s has no rate — unpriced (never $0.00)" % m_)
++for m_ in sorted(no_cc_rate):
++    notes.append("excludes cache_creation for %s (no cache-write rate in table)" % m_)
++
++# planned vs actual model check
++mismatch = False
++if charter and stages:
++    planned = {p.get("agent"): p.get("model") for p in charter.get("planned") or []}
++    for s in stages:
++        want = planned.get(s.get("agent"))
++        if want and s["models"] and want not in s["models"] and DATE_SUFFIX.sub("", want) not in {DATE_SUFFIX.sub("", k) for k in s["models"]}:
++            mismatch = True
++
++# ---- metrics cross-check ---------------------------------------------------
++metrics_check = None
++mpath = os.path.join(work, "metrics.json")
++if os.path.exists(mpath):
++    try:
++        rows = json.load(open(mpath))
++    except ValueError:
++        rows = None
++    if isinstance(rows, list):
++        agents = {s.get("agent") for s in stages}
++        win_cost = sum(r.get("costUsd") or 0.0 for r in rows if r.get("agent") in agents)
++        mnotes = ["window attribution — includes any concurrent work by the same agents"]
++        has_output = any("output" in (r.get("tokens") or {}) for r in rows)
++        if not has_output:
++            mnotes.append("platform metric excludes output tokens (kyber gap — fix pending)")
++        metrics_check = {"window_cost_usd": round(win_cost, 2), "notes": mnotes}
++
++row = {
++    "v": 1,
++    "closed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
++    "issue": issue,
++    "title": os.environ["TITLE_ARG"] or (issue_obj.get("title") or None),
++    "charter_variant": sorted(variants)[0] if len(variants) == 1 else (sorted(variants) or None),
++    "planned": (charter or {}).get("planned"),
++    "planned_vs_actual_model_mismatch": mismatch,
++    "wall_clock_s": int(os.environ["WALL_ARG"]) if os.environ["WALL_ARG"] else None,
++    "kickbacks": int(os.environ["KICK_ARG"]) if os.environ["KICK_ARG"] else None,
++    "stages": stages,
++    "totals": {
++        "tokens": totals,
++        "cost_usd": round(cost, 2) if (priced and stages) else None,
++        "priced": bool(priced and stages),
++        "cost_notes": notes,
++        "rates_provenance": "%s@%s fetched %s" % (
++            meta.get("source", "unknown"),
++            (meta.get("upstream_commit") or "unknown")[:7],
++            meta.get("fetched_at", "unknown")),
++    },
++    "metrics_check": metrics_check,
++    "report_path": os.environ["REPORT_ARG"] or None,
++}
++if not stages:
++    row["totals"]["cost_notes"].append("no falcon:usage:v1 reports found — cost unavailable")
++if len(variants) > 1:
++    row["totals"]["cost_notes"].append("MIXED charter variants mid-issue: %s" % ", ".join(sorted(variants)))
++print(json.dumps(row, sort_keys=True))
++PYEOF
+diff --git a/scripts/tests/test_issue_cost.sh b/scripts/tests/test_issue_cost.sh
+new file mode 100755
+index 0000000..9576e42
+--- /dev/null
++++ b/scripts/tests/test_issue_cost.sh
+@@ -0,0 +1,141 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++# test_issue_cost.sh — unit tests for scripts/issue-cost.sh. Stubs the App-token
++# gh wrapper (FALCON_GH_ISSUE) with a script serving canned comment/issue JSON;
++# uses a fixture rate table. Asserts pricing math, the truthfulness ladder,
++# provenance, planned≠actual detection, and the metrics cross-check labels.
++
++SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
++SUT="${ROOT}/scripts/issue-cost.sh"
++
++PASS=0; FAIL=0
++pass() { echo "[PASS] $*"; PASS=$((PASS + 1)); }
++fail() { echo "[FAIL] $*"; FAIL=$((FAIL + 1)); }
++
++jqget() { python3 -c 'import json,sys
++d=json.load(sys.stdin)
++for k in sys.argv[1].split("."):
++    d = d[int(k)] if isinstance(d, list) else d[k]
++print(d)' "$1"; }
++
++SBX="$(mktemp -d)"
++
++# Fixture rates: sonnet fully rated (incl. cache_creation), opus missing cache_creation.
++cat > "${SBX}/rates.yaml" <<'EOF'
++claude-sonnet-4-5:
++    input: 3
++    output: 15
++    cache_read: 0.3
++    cache_creation: 3.75
++claude-opus-4-5:
++    input: 5
++    output: 25
++    cache_read: 0.5
++EOF
++cat > "${SBX}/rates.meta" <<'EOF'
++source: litellm
++upstream_commit: 8447cd3ad39817bee0cdf0b3272ff8d2a36f88a8
++fetched_at: 2026-07-13T07:01:47Z
++EOF
++export FALCON_RATES_FILE="${SBX}/rates.yaml"
++export FALCON_RATES_META="${SBX}/rates.meta"
++
++usage_marker() { # agent stage model input output cr cc quality
++  printf '<!-- falcon:usage:v1 {"v":1,"agent":"%s","envelope_id":"e-%s","stage_label":"%s","issue":"matty-v/snapdex#42","window":{"from":"2026-08-07T10:00:00Z","to":"2026-08-07T11:00:00Z"},"models":{"%s":{"input":%d,"output":%d,"cache_read":%d,"cache_creation":%d,"api_calls":5}},"charter_variant":"full@abc1234","quality":"%s","reason":null} -->' \
++    "$1" "$1" "$2" "$3" "$4" "$5" "$6" "$7" "$8"
++}
++
++# Stub gh wrapper: serves files from ${SBX}/gh/<sanitized-path>.json
++mkdir -p "${SBX}/gh"
++cat > "${SBX}/gh-stub.sh" <<EOF
++#!/usr/bin/env bash
++# \$1=api \$2=path (ignore remaining flags)
++f="${SBX}/gh/\$(echo "\$2" | tr '/' '_').json"
++[ -r "\$f" ] && cat "\$f" || { echo "not found: \$f" >&2; exit 1; }
++EOF
++chmod +x "${SBX}/gh-stub.sh"
++export FALCON_GH_ISSUE="${SBX}/gh-stub.sh"
++
++# --- fixture: charter on body, 2 clean stage reports on issue, 1 on PR ------
++CHARTER='<!-- falcon:charter:v1 {"v":1,"issue":"matty-v/snapdex#42","kickoff_at":"2026-08-07T09:00:00Z","planned":[{"agent":"yoda","role":"product-triage","model":"claude-sonnet-4-5"},{"agent":"han","role":"builder","model":"claude-sonnet-4-5"},{"agent":"chewie","role":"review","model":"claude-sonnet-4-5"}],"charter_variant":"full@abc1234"} -->'
++python3 - "$SBX" "$CHARTER" \
++  "$(usage_marker yoda needs-triage claude-sonnet-4-5 100000 5000 1000000 200000 exact)" \
++  "$(usage_marker han ready-for-implementation claude-sonnet-4-5 1000000 50000 10000000 2000000 exact)" \
++  "$(usage_marker chewie merge-requested claude-sonnet-4-5 200000 10000 2000000 400000 exact)" <<'PYEOF'
++import json, os, sys
++sbx, charter, yoda, han, chewie = sys.argv[1:6]
++g = lambda name, obj: json.dump(obj, open(os.path.join(sbx, "gh", name), "w"))
++g("repos_matty-v_snapdex_issues_42_comments.json",
++  [{"body": "<!-- falcon:pickup -->\npicked up"}, {"body": yoda}, {"body": han}])
++g("repos_matty-v_snapdex_issues_42.json", {"title": "species detail view", "body": "desc\n" + charter})
++g("repos_matty-v_snapdex_issues_99_comments.json", [{"body": chewie}])
++PYEOF
++
++R="$("${SUT}" matty-v/snapdex#42 --pr 99 --wall-clock-s 13260 --kickbacks 0)"
++# cost: input 1.3M*3 + output 65k*15 + cr 13M*0.3 + cc 2.6M*3.75 = 3.9+0.975+3.9+9.75 = 18.53
++[[ "$(echo "$R" | jqget totals.cost_usd)" == "18.53" ]] && pass "priced total 18.53" || fail "cost: $(echo "$R" | jqget totals.cost_usd)"
++[[ "$(echo "$R" | jqget totals.priced)" == "True" ]] && pass "priced=true" || fail "priced: $R"
++[[ "$(echo "$R" | jqget totals.tokens.output)" == "65000" ]] && pass "output summed across issue+PR" || fail "output: $R"
++[[ "$(echo "$R" | jqget stages.2.agent)" == "chewie" ]] && pass "PR-comment report collected" || fail "stages: $R"
++[[ "$(echo "$R" | jqget charter_variant)" == "full@abc1234" ]] && pass "variant propagated" || fail "variant: $R"
++[[ "$(echo "$R" | jqget planned_vs_actual_model_mismatch)" == "False" ]] && pass "no model mismatch" || fail "mismatch: $R"
++echo "$R" | grep -q "litellm@8447cd3 fetched 2026-07-13" && pass "rates provenance stamped" || fail "provenance: $R"
++[[ "$(echo "$R" | jqget title)" == "species detail view" ]] && pass "title from issue" || fail "title: $R"
++
++# --- unavailable stage forces unpriced --------------------------------------
++python3 - "$SBX" "$(usage_marker han s claude-sonnet-4-5 1000 100 0 0 exact)" <<'PYEOF'
++import json, os, sys
++sbx, han = sys.argv[1:3]
++unavail = '<!-- falcon:usage:v1 {"v":1,"agent":"yoda","envelope_id":"e2","stage_label":"needs-triage","issue":"matty-v/snapdex#43","window":{"from":null,"to":"2026-08-07T11:00:00Z"},"models":{},"charter_variant":"full@abc1234","quality":"unavailable","reason":"no baseline (pod recycled before pickup comment landed)"} -->'
++json.dump([{"body": han}, {"body": unavail}], open(os.path.join(sbx, "gh", "repos_matty-v_snapdex_issues_43_comments.json"), "w"))
++json.dump({"title": "t", "body": ""}, open(os.path.join(sbx, "gh", "repos_matty-v_snapdex_issues_43.json"), "w"))
++PYEOF
++R="$("${SUT}" matty-v/snapdex#43)"
++[[ "$(echo "$R" | jqget totals.priced)" == "False" ]] && pass "unavailable stage → priced=false" || fail "unavail priced: $R"
++[[ "$(echo "$R" | jqget totals.cost_usd)" == "None" ]] && pass "unavailable stage → cost null" || fail "unavail cost: $R"
++echo "$R" | grep -q "usage unavailable" && pass "unavailable reason in notes" || fail "notes: $R"
++
++# --- unknown model → unpriced, never \$0; missing cc rate noted --------------
++python3 - "$SBX" \
++  "$(usage_marker han s claude-nebula-9 1000 100 0 0 exact)" \
++  "$(usage_marker ackbar s2 claude-opus-4-5 1000 100 0 50000 exact)" <<'PYEOF'
++import json, os, sys
++sbx, unknown, opus = sys.argv[1:4]
++json.dump([{"body": unknown}, {"body": opus}], open(os.path.join(sbx, "gh", "repos_matty-v_snapdex_issues_44_comments.json"), "w"))
++json.dump({"title": "t", "body": ""}, open(os.path.join(sbx, "gh", "repos_matty-v_snapdex_issues_44.json"), "w"))
++PYEOF
++R="$("${SUT}" matty-v/snapdex#44)"
++[[ "$(echo "$R" | jqget totals.priced)" == "False" ]] && pass "unknown model → priced=false" || fail "unknown model: $R"
++echo "$R" | grep -q "claude-nebula-9 has no rate" && pass "unknown model named in notes" || fail "unknown note: $R"
++echo "$R" | grep -q "excludes cache_creation for claude-opus-4-5" && pass "missing cc rate noted" || fail "cc note: $R"
++
++# --- date-suffix rate lookup ------------------------------------------------
++python3 - "$SBX" "$(usage_marker han s claude-sonnet-4-5-20250929 1000000 0 0 0 exact)" <<'PYEOF'
++import json, os, sys
++sbx, m = sys.argv[1:3]
++json.dump([{"body": m}], open(os.path.join(sbx, "gh", "repos_matty-v_snapdex_issues_45_comments.json"), "w"))
++json.dump({"title": "t", "body": ""}, open(os.path.join(sbx, "gh", "repos_matty-v_snapdex_issues_45.json"), "w"))
++PYEOF
++R="$("${SUT}" matty-v/snapdex#45)"
++[[ "$(echo "$R" | jqget totals.cost_usd)" == "3.0" ]] && pass "date-suffix lookup priced" || fail "suffix: $R"
++
++# --- metrics cross-check labels the platform gap ----------------------------
++cat > "${SBX}/metrics.json" <<'EOF'
++[{"agent":"han","model":"claude-sonnet-4-5","tokens":{"input":900000,"cache_read":9000000,"cache_creation":1800000},"costUsd":3.10,"priced":true},
++ {"agent":"r2-d2","model":"claude-sonnet-4-5","tokens":{"input":5},"costUsd":99.0,"priced":true}]
++EOF
++python3 - "$SBX" "$(usage_marker han s claude-sonnet-4-5 1000000 50000 10000000 2000000 exact)" <<'PYEOF'
++import json, os, sys
++sbx, m = sys.argv[1:3]
++json.dump([{"body": m}], open(os.path.join(sbx, "gh", "repos_matty-v_snapdex_issues_46_comments.json"), "w"))
++json.dump({"title": "t", "body": ""}, open(os.path.join(sbx, "gh", "repos_matty-v_snapdex_issues_46.json"), "w"))
++PYEOF
++R="$("${SUT}" matty-v/snapdex#46 --metrics-json "${SBX}/metrics.json")"
++[[ "$(echo "$R" | jqget metrics_check.window_cost_usd)" == "3.1" ]] && pass "cross-check sums contributors only" || fail "xcheck sum: $R"
++echo "$R" | grep -q "excludes output tokens" && pass "output-gap labeled" || fail "xcheck label: $R"
++
++echo
++echo "issue-cost: ${PASS} passed, ${FAIL} failed"
++[[ "${FAIL}" -eq 0 ]]
+diff --git a/scripts/tests/test_token_usage.sh b/scripts/tests/test_token_usage.sh
+new file mode 100755
+index 0000000..7d09cdd
+--- /dev/null
++++ b/scripts/tests/test_token_usage.sh
+@@ -0,0 +1,109 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++# test_token_usage.sh — unit tests for scripts/token-usage.sh.
++# Builds a fake ~/.claude/projects tree (CLAUDE_PROJECTS_DIR override), runs
++# baseline/report, and asserts the delta math, dedup, streaming-skip, the
++# marker forms, and the fail-loud quality ladder. No network; the baseline
++# recovery path is exercised with a stubbed gh-issue wrapper via PATH-free env.
++
++SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
++SUT="${ROOT}/scripts/token-usage.sh"
++
++PASS=0; FAIL=0
++pass() { echo "[PASS] $*"; PASS=$((PASS + 1)); }
++fail() { echo "[FAIL] $*"; FAIL=$((FAIL + 1)); }
++
++jqget() { python3 -c 'import json,sys; d=json.load(sys.stdin)
++for k in sys.argv[1].split("."):
++    d = d[int(k)] if isinstance(d, list) else d[k]
++print(d)' "$1"; }
++
++# assistant transcript line: model, in, out, cr, cc, speed, msgid
++line() {
++  printf '{"type":"assistant","uuid":"u-%s","message":{"id":"%s","model":"%s","usage":{"input_tokens":%d,"output_tokens":%d,"cache_read_input_tokens":%d,"cache_creation_input_tokens":%d,"speed":"%s"}}}\n' \
++    "$RANDOM$RANDOM" "$7" "$1" "$2" "$3" "$4" "$5" "$6"
++}
++
++make_sandbox() {
++  SBX="$(mktemp -d)"
++  export CLAUDE_PROJECTS_DIR="${SBX}/projects"
++  export FALCON_RUNTIME_DIR="${SBX}/runtime"
++  export FALCON_AGENT_NAME="han"
++  export FALCON_VARIANT_FILE="${SBX}/VARIANT"
++  echo "full@test123" > "${FALCON_VARIANT_FILE}"
++  mkdir -p "${CLAUDE_PROJECTS_DIR}/slug-a"
++  T1="${CLAUDE_PROJECTS_DIR}/slug-a/sess1.jsonl"
++}
++
++# --- 1. baseline counts finalized entries, skips streaming, dedups ----------
++make_sandbox
++{
++  line claude-sonnet-4-5 100 10 1000 200 standard m1
++  line claude-sonnet-4-5 100 10 1000 200 standard m1     # dup message.id — once
++  line claude-sonnet-4-5 50  5  500  100 '?'      m2     # streaming — skipped
++  line claude-opus-4-5   10  1  100  20  standard m3     # second model
++} > "${T1}"
++B="$("${SUT}" baseline env-1)"
++[[ "$(echo "$B" | jqget totals.claude-sonnet-4-5.input)" == "100" ]] && pass "dedup by message.id" || fail "dedup: $B"
++[[ "$(echo "$B" | jqget totals.claude-sonnet-4-5.api_calls)" == "1" ]] && pass "streaming entry skipped" || fail "streaming: $B"
++[[ "$(echo "$B" | jqget totals.claude-opus-4-5.output)" == "1" ]] && pass "per-model grouping" || fail "grouping: $B"
++[[ -f "${FALCON_RUNTIME_DIR}/usage-baseline-env-1.json" ]] && pass "baseline persisted to .runtime" || fail "baseline file missing"
++
++# --- 2. report = clean delta, exact quality, variant tag --------------------
++{
++  line claude-sonnet-4-5 300 40 3000 600 standard m4
++  line claude-sonnet-4-5 200 25 2500 300 fast     m5
++} >> "${T1}"
++R="$("${SUT}" report env-1 --stage ready-for-implementation --issue matty-v/snapdex#42)"
++[[ "$(echo "$R" | jqget models.claude-sonnet-4-5.input)" == "500" ]] && pass "delta input 500" || fail "delta input: $R"
++[[ "$(echo "$R" | jqget models.claude-sonnet-4-5.output)" == "65" ]] && pass "delta output 65" || fail "delta output: $R"
++[[ "$(echo "$R" | jqget quality)" == "exact" ]] && pass "quality exact" || fail "quality: $R"
++[[ "$(echo "$R" | jqget charter_variant)" == "full@test123" ]] && pass "variant tagged" || fail "variant: $R"
++echo "$R" | grep -q '"claude-opus-4-5"' && fail "zero-delta model should be omitted" || pass "zero-delta model omitted"
++
++# --- 3. new file after rotation counts in full, still exact -----------------
++T2="${CLAUDE_PROJECTS_DIR}/slug-a/sess2.jsonl"
++line claude-sonnet-4-5 70 7 700 70 standard m6 > "${T2}"
++R="$("${SUT}" report env-1 --stage s --issue matty-v/snapdex#42)"
++[[ "$(echo "$R" | jqget models.claude-sonnet-4-5.output)" == "72" ]] && pass "rotated-in file counted (65+7)" || fail "rotation: $R"
++[[ "$(echo "$R" | jqget quality)" == "exact" ]] && pass "rotation is not a discontinuity" || fail "rotation quality: $R"
++
++# --- 4. vanished baseline file → lower_bound floor --------------------------
++make_sandbox
++line claude-sonnet-4-5 100 10 1000 200 standard m1 > "${T1}"
++"${SUT}" baseline env-2 >/dev/null
++rm "${T1}"                                   # session reset wipes the file
++line claude-sonnet-4-5 30 3 300 30 standard m7 > "${CLAUDE_PROJECTS_DIR}/slug-a/fresh.jsonl"
++R="$("${SUT}" report env-2 --stage s --issue matty-v/snapdex#42)"
++[[ "$(echo "$R" | jqget quality)" == "lower_bound" ]] && pass "wipe → lower_bound" || fail "wipe quality: $R"
++[[ "$(echo "$R" | jqget models.claude-sonnet-4-5.input)" == "30" ]] && pass "floor counts only new file" || fail "floor: $R"
++
++# --- 5. shrunken file → excluded, lower_bound -------------------------------
++make_sandbox
++{ line claude-sonnet-4-5 100 10 1000 200 standard m1; line claude-sonnet-4-5 100 10 1000 200 standard m8; } > "${T1}"
++"${SUT}" baseline env-3 >/dev/null
++line claude-sonnet-4-5 100 10 1000 200 standard m1 > "${T1}"   # compacted smaller
++R="$("${SUT}" report env-3 --stage s --issue matty-v/snapdex#42)"
++[[ "$(echo "$R" | jqget quality)" == "unavailable" ]] && pass "all-discontinuous → unavailable" || fail "shrink: $R"
++
++# --- 6. no baseline at all → unavailable, never zero ------------------------
++make_sandbox
++line claude-sonnet-4-5 10 1 0 0 standard m9 > "${T1}"
++R="$("${SUT}" report env-nope --stage s --issue matty-v/snapdex#42)"
++[[ "$(echo "$R" | jqget quality)" == "unavailable" ]] && pass "missing baseline → unavailable" || fail "missing baseline: $R"
++echo "$R" | grep -q '"models": {}' || echo "$R" | grep -q '"models":{}' && pass "no fabricated counts" || fail "fabricated: $R"
++
++# --- 7. marker forms --------------------------------------------------------
++make_sandbox
++line claude-sonnet-4-5 10 1 0 0 standard m1 > "${T1}"
++M="$("${SUT}" baseline env-4 --marker)"
++echo "$M" | grep -q '^<!-- falcon:usage-baseline:v1 {' && pass "baseline marker one-liner" || fail "baseline marker: $M"
++{ line claude-sonnet-4-5 20 2 0 0 standard m2; } >> "${T1}"
++M="$("${SUT}" report env-4 --stage s --issue matty-v/snapdex#42 --marker)"
++echo "$M" | grep -q '^<!-- falcon:usage:v1 {' && pass "report marker one-liner" || fail "report marker: $M"
++
++echo
++echo "token-usage: ${PASS} passed, ${FAIL} failed"
++[[ "${FAIL}" -eq 0 ]]
+diff --git a/scripts/token-usage.sh b/scripts/token-usage.sh
+new file mode 100755
+index 0000000..9608f29
+--- /dev/null
++++ b/scripts/token-usage.sh
+@@ -0,0 +1,279 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++# token-usage.sh — per-stage token self-accounting for Falcon Dev workers
++# (cost-tracking, fdc#TBD). Each worker measures its OWN spend for a dispatch by
++# summing its Claude Code session transcripts at pickup (baseline) and at
++# completion (report = now − baseline), per model, including output tokens.
++#
++# Subcommands:
++#   baseline <envelope-id> [--marker]
++#       Scan every transcript, write the baseline snapshot to
++#       .runtime/usage-baseline-<envelope>.json, print it (or its issue-comment
++#       marker form with --marker). Run from handle-inbound Step 2b; the marker
++#       line is appended INSIDE the falcon:pickup comment so the baseline
++#       survives a pod recycle (.runtime/ does not).
++#   report <envelope-id> --stage <stage-label> --issue <owner/repo#N> [--marker]
++#       Recompute, subtract the baseline (recovering it from the issue's pickup
++#       comment via the App-token wrapper if .runtime/ was lost), and print the
++#       per-model usage report (or its marker form). Run from Step 4b; the
++#       marker line is appended INSIDE the falcon:complete comment.
++#
++# Truthfulness ladder (NEVER fabricate — team directive):
++#   quality "exact"       clean delta over an intact transcript tree
++#   quality "lower_bound" one or more transcript files rotated/compacted/reset
++#                         mid-stage; discontinuous files are EXCLUDED, so the
++#                         figure is a floor, and reason says why
++#   quality "unavailable" no baseline anywhere (or nothing measurable) — callers
++#                         must render "token usage unavailable (<reason>)",
++#                         never 0, never a guess
++#
++# Transcript facts (schema per kyber pkg/tokenreport/parser.go, verified
++# 2026-08-07): $HOME/.claude/projects/<slug>/<session>.jsonl, one JSON object
++# per line; assistant lines carry message.model + message.usage token counts;
++# usage.speed=="?" (or empty) means still streaming — skip; multi-block
++# messages repeat identical usage on several lines — dedup by message.id, then
++# uuid, then leafUuid. Sidechain (subagent) entries are real spend — included.
++# Files are append-only and rotation starts a NEW file, so a whole-tree scan
++# makes rotation a non-event for deltas.
++#
++# Env overrides (tests): CLAUDE_PROJECTS_DIR, FALCON_RUNTIME_DIR,
++# FALCON_AGENT_NAME, FALCON_VARIANT_FILE.
++
++SCRIPT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"   # …/vendor/falcon-dev-common
++REPO_ROOT="$(cd "${SCRIPT_ROOT}/../.." && pwd)"   # the agent's identity repo
++
++PROJECTS_DIR="${CLAUDE_PROJECTS_DIR:-${HOME}/.claude/projects}"
++RUNTIME_DIR="${FALCON_RUNTIME_DIR:-${REPO_ROOT}/.runtime}"
++VARIANT_FILE="${FALCON_VARIANT_FILE:-${SCRIPT_ROOT}/VARIANT}"
++AGENT_NAME="${FALCON_AGENT_NAME:-$(basename "${REPO_ROOT}" | sed 's/-agent$//')}"
++
++usage() { sed -n '3,26p' "$0"; exit 2; }
++
++# variant — "<name>@<sha7>", e.g. "full@9c63b54". The name comes from the
++# vendored VARIANT file; the sha from the identity repo's existing vendor pin
++# (vendor/falcon-dev-common-version), so the tag needs no per-run bookkeeping.
++variant() {
++  local v="unknown" pinfile="${REPO_ROOT}/vendor/falcon-dev-common-version"
++  [[ -r "${VARIANT_FILE}" ]] && v="$(tr -d '[:space:]' < "${VARIANT_FILE}")"
++  if [[ "${v}" != *@* && -r "${pinfile}" ]]; then
++    v="${v}@$(head -1 "${pinfile}" | cut -c1-7)"
++  fi
++  printf '%s\n' "${v}"
++}
++
++sanitize() { printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '_'; }
++
++# scan_tree — emit {"files":{path:{"size":N,"models":{...}}},"totals":{model:{...}}}
++scan_tree() {
++  python3 - "$PROJECTS_DIR" <<'PYEOF'
++import glob, json, os, sys
++
++root = sys.argv[1]
++ZERO = lambda: {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0, "api_calls": 0}
++files, totals, seen = {}, {}, set()
++
++for path in sorted(glob.glob(os.path.join(root, "*", "*.jsonl"))):
++    per = {}
++    try:
++        with open(path, encoding="utf-8", errors="replace") as f:
++            for line in f:
++                line = line.strip()
++                if not line:
++                    continue
++                try:
++                    e = json.loads(line)
++                except ValueError:
++                    continue
++                if e.get("type") != "assistant":
++                    continue
++                m = e.get("message") or {}
++                u = m.get("usage") or {}
++                if u.get("speed") in (None, "", "?"):  # not finalized yet
++                    continue
++                key = m.get("id") or e.get("uuid") or e.get("leafUuid")
++                if key is not None:
++                    if key in seen:
++                        continue
++                    seen.add(key)
++                b = per.setdefault(m.get("model") or "unknown", ZERO())
++                b["input"] += int(u.get("input_tokens") or 0)
++                b["output"] += int(u.get("output_tokens") or 0)
++                b["cache_read"] += int(u.get("cache_read_input_tokens") or 0)
++                b["cache_creation"] += int(u.get("cache_creation_input_tokens") or 0)
++                b["api_calls"] += 1
++        files[path] = {"size": os.path.getsize(path), "models": per}
++    except OSError:
++        continue
++    for model, b in per.items():
++        t = totals.setdefault(model, ZERO())
++        for k in t:
++            t[k] += b[k]
++
++print(json.dumps({"files": files, "totals": totals}, sort_keys=True))
++PYEOF
++}
++
++now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
++
++# wrap_marker <kind> <json> — one-line hidden comment; JSON containing "--"
++# would terminate an HTML comment early, so fall back to a fenced block.
++wrap_marker() {
++  local kind="$1" json="$2"
++  if [[ "${json}" == *--* ]]; then
++    printf '<!-- %s -->\n```json\n%s\n```\n' "${kind}" "${json}"
++  else
++    printf '<!-- %s %s -->\n' "${kind}" "${json}"
++  fi
++}
++
++cmd_baseline() {
++  local envelope="$1"; shift
++  local marker=false
++  [[ "${1:-}" == "--marker" ]] && marker=true
++  mkdir -p "${RUNTIME_DIR}"
++  local scan taken file
++  scan="$(scan_tree)"
++  taken="$(now_iso)"
++  file="${RUNTIME_DIR}/usage-baseline-$(sanitize "${envelope}").json"
++  local json
++  json="$(SCAN_JSON="${scan}" python3 - "$envelope" "$taken" <<'PYEOF'
++import json, os, sys
++scan = json.loads(os.environ["SCAN_JSON"])
++print(json.dumps({"v": 1, "envelope_id": sys.argv[1], "taken_at": sys.argv[2],
++                  "files": scan["files"], "totals": scan["totals"]}, sort_keys=True))
++PYEOF
++)"
++  printf '%s\n' "${json}" > "${file}"
++  if ${marker}; then wrap_marker "falcon:usage-baseline:v1" "${json}"; else printf '%s\n' "${json}"; fi
++}
++
++# recover_baseline <envelope> <owner/repo#N> — pull the baseline marker back out
++# of the issue's pickup comment. Prints baseline JSON or nothing.
++recover_baseline() {
++  local envelope="$1" issue="$2"
++  local repo="${issue%#*}" num="${issue##*#}"
++  local comments
++  comments="$("${SCRIPT_ROOT}/hooks/gh-issue.sh" api "repos/${repo}/issues/${num}/comments" --paginate 2>/dev/null || true)"
++  [[ -z "${comments}" ]] && return 0
++  COMMENTS_JSON="${comments}" python3 - "$envelope" <<'PYEOF'
++import json, os, re, sys
++
++envelope = sys.argv[1]
++try:
++    comments = json.loads(os.environ["COMMENTS_JSON"])
++except ValueError:
++    sys.exit(0)
++pat = re.compile(r"<!-- falcon:usage-baseline:v1 (\{.*?\}) -->", re.S)
++for c in comments if isinstance(comments, list) else []:
++    for m in pat.finditer(c.get("body") or ""):
++        try:
++            b = json.loads(m.group(1))
++        except ValueError:
++            continue
++        if b.get("envelope_id") == envelope:
++            print(json.dumps(b, sort_keys=True))
++            sys.exit(0)
++PYEOF
++}
++
++cmd_report() {
++  local envelope="$1"; shift
++  local stage="" issue="" marker=false
++  while [[ $# -gt 0 ]]; do
++    case "$1" in
++      --stage) stage="$2"; shift 2 ;;
++      --issue) issue="$2"; shift 2 ;;
++      --marker) marker=true; shift ;;
++      *) usage ;;
++    esac
++  done
++  [[ -z "${stage}" || -z "${issue}" ]] && usage
++
++  local bfile="${RUNTIME_DIR}/usage-baseline-$(sanitize "${envelope}").json"
++  local baseline=""
++  if [[ -r "${bfile}" ]]; then
++    baseline="$(cat "${bfile}")"
++  else
++    baseline="$(recover_baseline "${envelope}" "${issue}")"
++  fi
++
++  local scan json
++  scan="$(scan_tree)"
++  json="$(BASELINE_JSON="${baseline}" SCAN_JSON="${scan}" \
++    python3 - "${AGENT_NAME}" "${envelope}" "${stage}" "${issue}" "$(now_iso)" "$(variant)" <<'PYEOF'
++import json, os, sys
++
++agent, envelope, stage, issue, now, variant = sys.argv[1:7]
++ZERO = lambda: {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0, "api_calls": 0}
++scan = json.loads(os.environ["SCAN_JSON"])
++raw = os.environ.get("BASELINE_JSON") or ""
++
++out = {"v": 1, "agent": agent, "envelope_id": envelope, "stage_label": stage,
++       "issue": issue, "window": {"from": None, "to": now}, "models": {},
++       "charter_variant": variant, "quality": "exact", "reason": None}
++
++if not raw.strip():
++    out["quality"], out["reason"] = "unavailable", "no baseline (pod recycled before pickup comment landed)"
++    print(json.dumps(out, sort_keys=True))
++    sys.exit(0)
++
++base = json.loads(raw)
++out["window"]["from"] = base.get("taken_at")
++discontinuous = 0
++models = {}
++
++def add(dst, src, sign=1):
++    for k in dst:
++        dst[k] += sign * src.get(k, 0)
++
++# Per-file delta: surviving intact files subtract their baseline; files that
++# vanished or shrank (compaction/session reset) are EXCLUDED entirely — we
++# cannot attribute their contents, so the total becomes a floor, not a guess.
++for path, b in (base.get("files") or {}).items():
++    cur = scan["files"].get(path)
++    if cur is None or cur["size"] < b["size"]:
++        discontinuous += 1
++        if cur is not None:
++            del scan["files"][path]
++        continue
++    neg = False
++    delta = {}
++    for model in set(list(cur["models"]) + list(b["models"])):
++        d = ZERO()
++        add(d, cur["models"].get(model, ZERO()))
++        add(d, b["models"].get(model, ZERO()), -1)
++        if any(v < 0 for v in d.values()):
++            neg = True
++            break
++        delta[model] = d
++    del scan["files"][path]
++    if neg:  # same path, same-or-larger size, yet counts went down: rewritten file
++        discontinuous += 1
++        continue
++    for model, d in delta.items():
++        add(models.setdefault(model, ZERO()), d)
++
++for path, cur in scan["files"].items():  # brand-new files count in full
++    for model, b in cur["models"].items():
++        add(models.setdefault(model, ZERO()), b)
++
++out["models"] = {m: c for m, c in models.items() if any(v > 0 for v in c.values())}
++if discontinuous:
++    out["quality"] = "lower_bound"
++    out["reason"] = "transcript discontinuity: %d file(s) rotated or compacted mid-stage" % discontinuous
++if not out["models"] and discontinuous:
++    out["quality"], out["reason"] = "unavailable", out["reason"] + "; nothing measurable survived"
++print(json.dumps(out, sort_keys=True))
++PYEOF
++)"
++  if ${marker}; then wrap_marker "falcon:usage:v1" "${json}"; else printf '%s\n' "${json}"; fi
++}
++
++[[ $# -lt 2 ]] && usage
++cmd="$1"; shift
++case "${cmd}" in
++  baseline) cmd_baseline "$@" ;;
++  report)   cmd_report "$@" ;;
++  *) usage ;;
++esac
+diff --git a/skills/discord-post.md b/skills/discord-post.md
+index a12beaf..f539df8 100644
+--- a/skills/discord-post.md
++++ b/skills/discord-post.md
+@@ -54,6 +54,11 @@ Rules:
+ - **Always bullets.** 1–3 bullets under a bold headline. Never a run-on sentence. Write for Matt skimming on a phone — what would a non-engineer want to know?
+ - **Intent → outcome.** Pickup post = what you're about to do. Completion post = how it went.
+ - **BAN-LIST — never include any of these:** test counts ("602 tests", "501/501"), commit hashes/SHAs, PR-stacking detail ("stacked on #304"), file paths, framework/tool names, implementation jargon ("append-only enforced server-side", "tsc clean", "ff-merge", "vite build"). If you're describing *how* you built it, delete it — say *what* it does for the user.
++- **Chartered ban-list carve-out — the 📊 cost bullet (cost tracking, CONTRACTS §10):** OUTCOME
++  posts carry exactly ONE trailing bullet with rounded stage tokens + model short-name
++  (`• 📊 ~10.4M tokens this stage (sonnet)`); Lando's kickoff/summary cards carry their chartered
++  cost lines. Matt pays the bill, so spend IS user-facing. Everything else on the ban-list stands —
++  no raw counts-by-type, no rate math, no transcript jargon in posts.
+ - **Markdown:** leading emoji + **bold** headline; bullets for the body; `→` for handoffs.
+ 
+ Worked transform (the real Han #305 post Matt flagged as too in-the-weeds):
+diff --git a/skills/handle-inbound.md b/skills/handle-inbound.md
+index 49c8ef1..2f6b381 100644
+--- a/skills/handle-inbound.md
++++ b/skills/handle-inbound.md
+@@ -119,8 +119,11 @@ in-flight picture from this comment, so a dispatch without one is invisible to s
+ 
+ ```bash
+ GH="${HOME}/dev/${AGENT_NAME}-agent/vendor/falcon-dev-common/hooks/gh-issue.sh"
++TU="${HOME}/dev/${AGENT_NAME}-agent/vendor/falcon-dev-common/scripts/token-usage.sh"
++USAGE_BASELINE="$("$TU" baseline "<envelope_id>" --marker 2>>"$AGENT_HOME/memory/dispatches.md" || true)"
+ "$GH" api "repos/<repo>/issues/<number>/comments" -f body="<!-- falcon:pickup -->
+-**${AGENT_NAME}** picked up \`<stage_label>\` · ETA <estimate> · envelope \`<envelope_id>\`" \
++**${AGENT_NAME}** picked up \`<stage_label>\` · ETA <estimate> · envelope \`<envelope_id>\`
++${USAGE_BASELINE}" \
+   2>>"$AGENT_HOME/memory/dispatches.md" || true   # non-blocking, but LOG loudly
+ ```
+ 
+@@ -129,6 +132,10 @@ for **both** an issue and a PR number, and it is the documented in-scope path fo
+ 
+ - **The `<!-- falcon:pickup -->` marker is load-bearing** — `/recover-stalls` parses on it. Don't
+   reformat it.
++- **The `<!-- falcon:usage-baseline:v1 … -->` line is your stage's token-usage baseline**
++  (CONTRACTS §10). It rides inside this comment so it survives a pod recycle (`.runtime/` does
++  not). If `token-usage.sh` fails, post the pickup comment WITHOUT it and log — never block, and
++  never invent a baseline.
+ - **The ETA must be explicit and unit-bearing** (`45m`, `2h`, `60-90m`) — it is the number a stall is
+   measured against, and an ETA that can't be parsed silently falls back to a shorter stage default.
+   Give the **high end** of any range.
+@@ -273,11 +280,24 @@ Example OUTCOME posts (bold headline, then bullets — never a run-on; obey the
+ 
+ Post only YOUR stage — don't narrate the pipeline; that's Lando's job. The thread is **per parent issue** — `ensure-thread` auto-resolves a PR ref to its issue, so always pass whatever ref your dispatch gave you and it lands on the one issue thread.
+ 
++**Token-usage self-report — REQUIRED part of completion (cost tracking, CONTRACTS §10).** Before
++posting, compute your stage's usage delta and add ONE 📊 bullet to the OUTCOME post (the single
++chartered exception to the ban-list — see `discord-post.md`): rounded total tokens + model
++short-name, e.g. `• 📊 ~10.4M tokens this stage (sonnet)`. If the report's `quality` is
++`unavailable`, the bullet is `• 📊 token usage unavailable (<reason>)` — **never 0, never a
++guess**; a `lower_bound` report reads `• 📊 ≥8.2M tokens this stage (sonnet)`.
++
++```bash
++TU="${HOME}/dev/${AGENT_NAME}-agent/vendor/falcon-dev-common/scripts/token-usage.sh"
++USAGE_REPORT="$("$TU" report "<envelope_id>" --stage "<stage_label>" --issue "<repo>#<issue-number>" \
++  --marker 2>>"$AGENT_HOME/memory/dispatches.md" || true)"
++```
++
+ ```bash
+ DP="${HOME}/dev/${AGENT_NAME}-agent/vendor/falcon-dev-common/scripts/discord-post.sh"
+ if [ -n "${USER_DISCORD_WEBHOOK_URL:-}" ]; then
+   TID="$("$DP" ensure-thread "<repo>" "<issue-number>" "<issue-title>")" \
+-    && "$DP" post "$TID" "${AGENT_NAME}" "<outcome in Format Standard>" || true
++    && "$DP" post "$TID" "${AGENT_NAME}" "<outcome in Format Standard, incl. the 📊 bullet>" || true
+ fi
+ ```
+ 
+@@ -288,10 +308,15 @@ re-dispatched as a false stall.
+ ```bash
+ GH="${HOME}/dev/${AGENT_NAME}-agent/vendor/falcon-dev-common/hooks/gh-issue.sh"
+ "$GH" api "repos/<repo>/issues/<number>/comments" -f body="<!-- falcon:complete -->
+-**${AGENT_NAME}** finished \`<stage_label>\` · outcome \`<success|error|held>\` · envelope \`<envelope_id>\`" \
++**${AGENT_NAME}** finished \`<stage_label>\` · outcome \`<success|error|held>\` · envelope \`<envelope_id>\`
++${USAGE_REPORT}" \
+   2>>"$AGENT_HOME/memory/dispatches.md" || true
+ ```
+ 
++The `<!-- falcon:usage:v1 … -->` line inside the completion comment is what Lando aggregates into
++the issue's final cost at close (CONTRACTS §10). Same failure contract as the comment itself:
++non-blocking, loudly logged, never fabricated.
++
+ Post it on **every** outcome — `held` and `error` included. A held stage that never comments looks
+ identical to a wedged one.
+ 
