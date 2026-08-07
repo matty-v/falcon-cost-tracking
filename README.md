@@ -32,9 +32,9 @@ This project makes the team account for its own spend:
 
 | Piece | Repo | Link |
 |---|---|---|
-| Platform fix: output tokens + cache-write pricing | `matty-v/kyber` | *(PR link pending)* |
-| `token-usage.sh`, charter/contract changes, roster, rates snapshot | `matty-v/falcon-dev-common` | *(commit link pending — private repo, key files mirrored in [`docs/mirror/`](docs/mirror/))* |
-| Lando: mini-charter, aggregation, ledger | `matty-v/lando-agent` | *(commit link pending — private repo, key files mirrored)* |
+| Platform fix: output tokens + cache-write pricing | `matty-v/kyber` | [kyber#23](https://github.com/matty-v/kyber/pull/23) |
+| `token-usage.sh`, charter/contract changes, roster, rates snapshot | `matty-v/falcon-dev-common` | `feat/cost-tracking` branch — private repo, mirrored in [`docs/mirror/`](docs/mirror/) |
+| Lando: mini-charter, aggregation, ledger | `matty-v/lando-agent` | `feat/cost-tracking` branch — private repo, mirrored in [`docs/mirror/`](docs/mirror/) |
 | Experiment protocol + results | this repo | [`docs/experiments/charter-size.md`](docs/experiments/charter-size.md) *(pending)* |
 | Process log (prompts, pushback, AI mistakes) | this repo | [`PROCESS.md`](PROCESS.md) |
 

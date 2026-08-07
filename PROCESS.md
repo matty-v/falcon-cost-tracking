@@ -172,6 +172,35 @@ review), and built the team layer (Phase 2) in the foreground:
   the scripts + full patches into `docs/mirror/` here, since reviewers can't see
   the private repos.
 
+### Session 1, continued — the kyber PR lands ([kyber#23](https://github.com/matty-v/kyber/pull/23))
+
+The background implementation agent finished the platform fix: output tokens
+wired end-to-end (parser → snapshot → accumulator → delta → windowed series →
+metrics API → PWA), cache-creation priced from the upstream LiteLLM feed
+(regenerated at the already-pinned sha — byte-identical across runs, no
+hand-typed prices), and the subtle part — the per-message output delta rule
+(count output only when the usage tuple changed; an identical re-report from the
+interval reporter contributes zero) — pinned by an 8-case white-box test.
+
+Human/AI interaction notes for this phase:
+- I (via Claude's review pass) read the critical hunks before anything was
+  pushed: the delta rule, the accumulator back-compat (missing `output` hash
+  field intentionally reads 0), and the pricing math. This is the change where a
+  silent bug would corrupt cost data going forward, so it got the closest read.
+- The agent surfaced honest deviations rather than papering over them: no
+  Redis-backed accumulator test (would need a new miniredis dependency — repo
+  rules say ask first), the regeneration timestamp is the actual re-fetch time,
+  and `make lint`/nodeagent tests fail on macOS on clean main too (CI is Linux).
+  Each was verified against a clean checkout instead of being taken on faith.
+- Verification: linux build+vet green, targeted + full test suites green
+  (pre-existing darwin failures unchanged), pwa-views 601 tests + version bump
+  0.21.0, helm lint/template green.
+
+Phase 1 + Phase 2 are now code-complete. What remains needs the LIVE system and
+me in the loop (the pipeline's approval gates are mine by design): merge fdc +
+lando-agent branches, fan out the vendor re-pin to the 8 agent repos, merge +
+release kyber#23, then the scratch-issue E2E run and the two experiment arms.
+
 ---
 
 ## Appendix A — the assignment (verbatim)
