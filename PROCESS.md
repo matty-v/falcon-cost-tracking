@@ -288,6 +288,39 @@ Still ahead of the live E2E: a kyber release so the deployed control plane
 actually serves output-token costs (CI never deploys; ArgoCD does), and pod
 session restarts so running agents pick up the re-linked skills.
 
+### Session 2, continued — cutting release v1.0.1
+
+My prompt: "kick off the release and let me know when it's ready to deploy to
+the kyber cluster where the falcon dev team is running." Claude read the
+release runbook first rather than winging it, ran two preflights (verified
+`v1.0.1` has no GHCR tag collision with the pre-open-source internal version
+line — a known launch-day gotcha — by querying the registry API directly after
+the PAT lacked `read:packages`; confirmed the workflow's input shape), then
+dispatched `prepare-release.yml` with `version=1.0.1` and armed a four-stage
+monitor: chart-bump merge → tag push → `release.yml` (8 images + GitHub
+Release) → the auto-merged digest-pinned falcon bump PR on kyber-deploy. It
+also corrected my mental model from the runbook: the human gate is the
+*approval before the tag* — once cut, falcon promotes automatically, so "ready
+to deploy" actually arrives as "deploying."
+
+### Session 2, continued — design confirmation: self-reports are the truth
+
+I described my mental model back as a test: an agent that goes through a
+lifecycle stage twice (spec kicked back by review) should report **two**
+instances of tokens used, and Lando should sum all segments with their models
+at the end to price the issue. Confirmed aligned, with two sharpenings from
+the implementation: (1) the accounting unit is the **dispatch envelope**, not
+the stage — a kickback re-dispatch mints a new envelope, hence a second
+baseline/report pair, and the aggregator deliberately keeps every instance
+("re-dispatch is real kickback spend", CONTRACTS §10.4), with a `kickbacks`
+count in the ledger row so rework-expensive is distinguishable from
+big-expensive; (2) the sum happens at **issue close** in Lando's ack path,
+and a worker whose report failed renders the total "partial" rather than a
+confidently-wrong number. Also reconfirmed: transcript self-reports are the
+per-issue source of truth; the platform metrics API is a labeled time-window
+cross-check, which the v1.0.1 fix makes converge instead of reading
+structurally low.
+
 ---
 
 ## Appendix A — the assignment (verbatim)
