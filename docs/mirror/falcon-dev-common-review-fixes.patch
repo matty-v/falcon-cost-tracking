@@ -1,0 +1,1385 @@
+commit 4f0d628b1f90ce24e9decfc27366f4357b3b451d
+Author: Matt Voget <matt.voget@gmail.com>
+Date:   Fri Aug 7 13:35:51 2026 -0600
+
+    fix(cost): review fixes — resume-safe attribution, pagination, bounded baseline, PR discovery, zero-total guards
+    
+    - token-usage.sh: mtime-ordered scan (resumed sessions can't fabricate
+      pre-baseline spend); prune zero-usage files (baseline stays bounded);
+      fenced + paginated recovery; empty-tree → unavailable
+    - issue-cost.sh: decode gh --paginate page-per-array output; auto-discover
+      linked PRs from the issue timeline; label unpriced metrics rows; all-zero
+      stages render unpriced, never $0.00
+    - rates snapshot refreshed from kyber's regenerated feed (cache_creation
+      rates present — was silently unpriceable fleet-wide)
+    - handle-inbound: baseline as its own comment (can't break falcon:pickup);
+      report computed in the same block as the completion comment; PR-keyed
+      stages recover from the number they posted on
+    - CHARTER/CONTRACTS §10 updated to match
+    
+    Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+
+diff --git a/CHARTER.md b/CHARTER.md
+index 8ec936e..7274ff9 100644
+--- a/CHARTER.md
++++ b/CHARTER.md
+@@ -321,7 +321,9 @@ to its Discord post and its Lando ack — those are unchanged):
+ ```
+ <!-- falcon:pickup -->
+ **<Agent>** picked up `<stage>` · ETA <estimate> · envelope `<envelope_id>`
+-<!-- falcon:usage-baseline:v1 {…} -->
++```
++```
++<!-- falcon:usage-baseline:v1 {…} -->      ← its OWN comment, right after the pickup
+ ```
+ ```
+ <!-- falcon:complete -->
+@@ -331,10 +333,11 @@ to its Discord post and its Lando ack — those are unchanged):
+ 
+ - **The HTML comment marker is load-bearing** — `/recover-stalls` parses on it. Do not reformat it.
+ - **The usage markers are load-bearing too** (cost tracking, added by Dave per Matt, 2026-08-07):
+-  the baseline line makes a stage's token accounting survive a pod recycle, and the report line is
+-  what Lando aggregates into the issue's final cost at close. Shapes and truthfulness rules are
+-  NORMATIVE in CONTRACTS §10; they are produced by `scripts/token-usage.sh`, never written by hand.
+-  A missing usage line is loudly logged but never blocks the comment — and downstream it renders as
++  the baseline comment makes a stage's token accounting survive a pod recycle (it is a SEPARATE
++  comment so it can never take the pickup marker down with it), and the report line is what Lando
++  aggregates into the issue's final cost at close. Shapes and truthfulness rules are NORMATIVE in
++  CONTRACTS §10; they are produced by `scripts/token-usage.sh`, never written by hand. A missing
++  usage marker is loudly logged but never blocks the comment — and downstream it renders as
+   "unavailable", never as a made-up number.
+ - **ETA must be explicit and unit-bearing** (`45m`, `2h`, `60-90m`). A stall is measured against it.
+ - **Recovery attempts are recorded the same way** (`<!-- falcon:recovery -->`, carrying the retry
+diff --git a/CONTRACTS.md b/CONTRACTS.md
+index c757665..16e65a5 100644
+--- a/CONTRACTS.md
++++ b/CONTRACTS.md
+@@ -611,11 +611,16 @@ record already lives). Three markers, all single-line hidden HTML comments with
+ machine-produced (`scripts/token-usage.sh` for the first two; Lando for the third). If serialized
+ JSON ever contains `--`, the producer falls back to a bare marker + fenced ```json block.
+ 
+-### 10.1 `falcon:usage-baseline:v1` — worker, INSIDE the `falcon:pickup` comment
++### 10.1 `falcon:usage-baseline:v1` — worker, its OWN comment right after `falcon:pickup`
+ 
+ The worker's transcript odometer at stage pickup. Written by `token-usage.sh baseline
+-<envelope_id> --marker`. Cached in the identity repo's `.runtime/`; the comment copy is the
+-recovery source after a pod recycle.
++<envelope_id> --marker` and posted as a SEPARATE comment immediately after the pickup comment —
++never inside it, so an oversized or failed baseline can never suppress the load-bearing
++`falcon:pickup` marker. Zero-usage transcript files are pruned from the blob (a file absent from
++the baseline counts in full at report time, which is correct for a file that had no usage).
++Cached in the identity repo's `.runtime/`; the comment copy is the recovery source after a pod
++recycle. On PR-keyed stages (review/deploy) it is posted on the PR, and the later `report
++--issue` must name that same number.
+ 
+ ```json
+ {"v":1,"envelope_id":"…","taken_at":"<iso8601>",
+@@ -659,8 +664,10 @@ the issue's Discord thread.
+ 
+ ### 10.4 Close-path aggregation (Lando, process-worker-ack Step 6b)
+ 
+-At issue close Lando: collects every `falcon:usage:v1` on the issue + linked PRs (duplicate
+-envelope_ids are ALL kept — re-dispatch is real kickback spend); prices per model from
++At issue close Lando: collects every `falcon:usage:v1` on the issue + linked PRs — linked PRs
++are AUTO-DISCOVERED from the issue's timeline (cross-referenced PRs in the same repo), unioned
++with any `--pr` args, because the pipeline record's `pr_ref` is usually unwritten (§9.5)
++(duplicate envelope_ids are ALL kept — re-dispatch is real kickback spend); prices per model from
+ `config/provider-rates.yaml` (suffix-normalized lookup; a model with no rate renders **unpriced**
+ and the total is flagged partial — never $0.00; `rates_provenance` from `.meta` travels with every
+ total); cross-checks Kyber's windowed metrics API and LABELS any discrepancy (e.g. "platform
+diff --git a/config/provider-rates.meta b/config/provider-rates.meta
+index f6634de..6052cc1 100644
+--- a/config/provider-rates.meta
++++ b/config/provider-rates.meta
+@@ -2,6 +2,6 @@ source: litellm
+ upstream_repo: BerriAI/litellm
+ upstream_file: model_prices_and_context_window.json
+ upstream_commit: 8447cd3ad39817bee0cdf0b3272ff8d2a36f88a8
+-fetched_at: 2026-07-13T07:01:47Z
++fetched_at: 2026-08-07T18:49:09Z
+ model_count: 161
+ rejected_count: 81
+diff --git a/config/provider-rates.yaml b/config/provider-rates.yaml
+index be845fa..6471837 100644
+--- a/config/provider-rates.yaml
++++ b/config/provider-rates.yaml
+@@ -3,649 +3,810 @@
+ # Source: LiteLLM model_prices_and_context_window.json (MIT license),
+ #   github.com/BerriAI/litellm — projected to kyber ProviderRates at build time.
+ # Upstream commit: 8447cd3ad39817bee0cdf0b3272ff8d2a36f88a8
+-# Fetched: 2026-07-13T07:01:47Z
++# Fetched: 2026-08-07T18:49:09Z
+ # Models: 161 (providers: anthropic, openai) | rejected by sanity bounds: 81
+ chatgpt-4o-latest:
+     input: 5
+     output: 15
+     cache_read: 0
++    cache_creation: 0
+ claude-3-7-sonnet-20250219:
+     input: 3
+     output: 15
+     cache_read: 0.3
++    cache_creation: 3.75
+ claude-3-haiku-20240307:
+     input: 0.25
+     output: 1.25
+     cache_read: 0.03
++    cache_creation: 0.3
+ claude-3-opus-20240229:
+     input: 15
+     output: 75
+     cache_read: 1.5
++    cache_creation: 18.75
+ claude-4-opus-20250514:
+     input: 15
+     output: 75
+     cache_read: 1.5
++    cache_creation: 18.75
+ claude-4-sonnet-20250514:
+     input: 3
+     output: 15
+     cache_read: 0.3
++    cache_creation: 3.75
+ claude-fable-5:
+     input: 10
+     output: 50
+     cache_read: 1
++    cache_creation: 12.5
+ claude-haiku-4-5:
+     input: 1
+     output: 5
+     cache_read: 0.1
++    cache_creation: 1.25
+ claude-haiku-4-5-20251001:
+     input: 1
+     output: 5
+     cache_read: 0.1
++    cache_creation: 1.25
+ claude-opus-4-1:
+     input: 15
+     output: 75
+     cache_read: 1.5
++    cache_creation: 18.75
+ claude-opus-4-1-20250805:
+     input: 15
+     output: 75
+     cache_read: 1.5
++    cache_creation: 18.75
+ claude-opus-4-5:
+     input: 5
+     output: 25
+     cache_read: 0.5
++    cache_creation: 6.25
+ claude-opus-4-5-20251101:
+     input: 5
+     output: 25
+     cache_read: 0.5
++    cache_creation: 6.25
+ claude-opus-4-6:
+     input: 5
+     output: 25
+     cache_read: 0.5
++    cache_creation: 6.25
+ claude-opus-4-6-20260205:
+     input: 5
+     output: 25
+     cache_read: 0.5
++    cache_creation: 6.25
+ claude-opus-4-7:
+     input: 5
+     output: 25
+     cache_read: 0.5
++    cache_creation: 6.25
+ claude-opus-4-7-20260416:
+     input: 5
+     output: 25
+     cache_read: 0.5
++    cache_creation: 6.25
+ claude-opus-4-8:
+     input: 5
+     output: 25
+     cache_read: 0.5
++    cache_creation: 6.25
+ claude-opus-4-20250514:
+     input: 15
+     output: 75
+     cache_read: 1.5
++    cache_creation: 18.75
+ claude-sonnet-4-5:
+     input: 3
+     output: 15
+     cache_read: 0.3
++    cache_creation: 3.75
+ claude-sonnet-4-5-20250929:
+     input: 3
+     output: 15
+     cache_read: 0.3
++    cache_creation: 3.75
+ claude-sonnet-4-6:
+     input: 3
+     output: 15
+     cache_read: 0.3
++    cache_creation: 3.75
+ claude-sonnet-4-20250514:
+     input: 3
+     output: 15
+     cache_read: 0.3
++    cache_creation: 3.75
+ claude-sonnet-5:
+     input: 2
+     output: 10
+     cache_read: 0.2
++    cache_creation: 2.5
+ codex-mini-latest:
+     input: 1.5
+     output: 6
+     cache_read: 0.375
++    cache_creation: 0
+ ft:gpt-3.5-turbo:
+     input: 3
+     output: 6
+     cache_read: 0
++    cache_creation: 0
+ ft:gpt-3.5-turbo-0125:
+     input: 3
+     output: 6
+     cache_read: 0
++    cache_creation: 0
+ ft:gpt-3.5-turbo-0613:
+     input: 3
+     output: 6
+     cache_read: 0
++    cache_creation: 0
+ ft:gpt-3.5-turbo-1106:
+     input: 3
+     output: 6
+     cache_read: 0
++    cache_creation: 0
+ ft:gpt-4o-2024-08-06:
+     input: 3.75
+     output: 15
+     cache_read: 1.875
++    cache_creation: 0
+ ft:gpt-4o-2024-11-20:
+     input: 3.75
+     output: 15
+     cache_read: 0
++    cache_creation: 1.875
+ ft:gpt-4o-mini-2024-07-18:
+     input: 0.3
+     output: 1.2
+     cache_read: 0.15
++    cache_creation: 0
+ ft:gpt-4-0613:
+     input: 30
+     output: 60
+     cache_read: 0
++    cache_creation: 0
+ ft:gpt-4.1-2025-04-14:
+     input: 3
+     output: 12
+     cache_read: 0.75
++    cache_creation: 0
+ ft:gpt-4.1-mini-2025-04-14:
+     input: 0.8
+     output: 3.2
+     cache_read: 0.2
++    cache_creation: 0
+ ft:gpt-4.1-nano-2025-04-14:
+     input: 0.2
+     output: 0.8
+     cache_read: 0.05
++    cache_creation: 0
+ ft:o4-mini-2025-04-16:
+     input: 4
+     output: 16
+     cache_read: 1
++    cache_creation: 0
+ gpt-3.5-turbo:
+     input: 0.5
+     output: 1.5
+     cache_read: 0
++    cache_creation: 0
+ gpt-3.5-turbo-16k:
+     input: 3
+     output: 4
+     cache_read: 0
++    cache_creation: 0
+ gpt-3.5-turbo-0125:
+     input: 0.5
+     output: 1.5
+     cache_read: 0
++    cache_creation: 0
+ gpt-3.5-turbo-1106:
+     input: 1
+     output: 2
+     cache_read: 0
++    cache_creation: 0
+ gpt-4:
+     input: 30
+     output: 60
+     cache_read: 0
++    cache_creation: 0
+ gpt-4o:
+     input: 2.5
+     output: 10
+     cache_read: 1.25
++    cache_creation: 0
+ gpt-4o-2024-05-13:
+     input: 5
+     output: 15
+     cache_read: 0
++    cache_creation: 0
+ gpt-4o-2024-08-06:
+     input: 2.5
+     output: 10
+     cache_read: 1.25
++    cache_creation: 0
+ gpt-4o-2024-11-20:
+     input: 2.5
+     output: 10
+     cache_read: 1.25
++    cache_creation: 0
+ gpt-4o-audio-preview:
+     input: 2.5
+     output: 10
+     cache_read: 0
++    cache_creation: 0
+ gpt-4o-audio-preview-2024-12-17:
+     input: 2.5
+     output: 10
+     cache_read: 0
++    cache_creation: 0
+ gpt-4o-audio-preview-2025-06-03:
+     input: 2.5
+     output: 10
+     cache_read: 0
++    cache_creation: 0
+ gpt-4o-mini:
+     input: 0.15
+     output: 0.6
+     cache_read: 0.075
++    cache_creation: 0
+ gpt-4o-mini-2024-07-18:
+     input: 0.15
+     output: 0.6
+     cache_read: 0.075
++    cache_creation: 0
+ gpt-4o-mini-audio-preview:
+     input: 0.15
+     output: 0.6
+     cache_read: 0
++    cache_creation: 0
+ gpt-4o-mini-audio-preview-2024-12-17:
+     input: 0.15
+     output: 0.6
+     cache_read: 0
++    cache_creation: 0
+ gpt-4o-mini-realtime-preview:
+     input: 0.6
+     output: 2.4
+     cache_read: 0.3
++    cache_creation: 0
+ gpt-4o-mini-realtime-preview-2024-12-17:
+     input: 0.6
+     output: 2.4
+     cache_read: 0.3
++    cache_creation: 0
+ gpt-4o-mini-search-preview:
+     input: 0.15
+     output: 0.6
+     cache_read: 0.075
++    cache_creation: 0
+ gpt-4o-mini-search-preview-2025-03-11:
+     input: 0.15
+     output: 0.6
+     cache_read: 0.075
++    cache_creation: 0
+ gpt-4o-mini-transcribe:
+     input: 1.25
+     output: 5
+     cache_read: 0
++    cache_creation: 0
+ gpt-4o-mini-transcribe-2025-03-20:
+     input: 1.25
+     output: 5
+     cache_read: 0
++    cache_creation: 0
+ gpt-4o-mini-transcribe-2025-12-15:
+     input: 1.25
+     output: 5
+     cache_read: 0
++    cache_creation: 0
+ gpt-4o-mini-tts:
+     input: 2.5
+     output: 10
+     cache_read: 0
++    cache_creation: 0
+ gpt-4o-mini-tts-2025-03-20:
+     input: 2.5
+     output: 10
+     cache_read: 0
++    cache_creation: 0
+ gpt-4o-mini-tts-2025-12-15:
+     input: 2.5
+     output: 10
+     cache_read: 0
++    cache_creation: 0
+ gpt-4o-realtime-preview:
+     input: 5
+     output: 20
+     cache_read: 2.5
++    cache_creation: 0
+ gpt-4o-realtime-preview-2024-12-17:
+     input: 5
+     output: 20
+     cache_read: 2.5
++    cache_creation: 0
+ gpt-4o-realtime-preview-2025-06-03:
+     input: 5
+     output: 20
+     cache_read: 2.5
++    cache_creation: 0
+ gpt-4o-search-preview:
+     input: 2.5
+     output: 10
+     cache_read: 1.25
++    cache_creation: 0
+ gpt-4o-search-preview-2025-03-11:
+     input: 2.5
+     output: 10
+     cache_read: 1.25
++    cache_creation: 0
+ gpt-4o-transcribe:
+     input: 2.5
+     output: 10
+     cache_read: 0
++    cache_creation: 0
+ gpt-4o-transcribe-diarize:
+     input: 2.5
+     output: 10
+     cache_read: 0
++    cache_creation: 0
+ gpt-4-0125-preview:
+     input: 10
+     output: 30
+     cache_read: 0
++    cache_creation: 0
+ gpt-4-0314:
+     input: 30
+     output: 60
+     cache_read: 0
++    cache_creation: 0
+ gpt-4-0613:
+     input: 30
+     output: 60
+     cache_read: 0
++    cache_creation: 0
+ gpt-4-1106-preview:
+     input: 10
+     output: 30
+     cache_read: 0
++    cache_creation: 0
+ gpt-4-turbo:
+     input: 10
+     output: 30
+     cache_read: 0
++    cache_creation: 0
+ gpt-4-turbo-2024-04-09:
+     input: 10
+     output: 30
+     cache_read: 0
++    cache_creation: 0
+ gpt-4-turbo-preview:
+     input: 10
+     output: 30
+     cache_read: 0
++    cache_creation: 0
+ gpt-4.1:
+     input: 2
+     output: 8
+     cache_read: 0.5
++    cache_creation: 0
+ gpt-4.1-2025-04-14:
+     input: 2
+     output: 8
+     cache_read: 0.5
++    cache_creation: 0
+ gpt-4.1-mini:
+     input: 0.4
+     output: 1.6
+     cache_read: 0.1
++    cache_creation: 0
+ gpt-4.1-mini-2025-04-14:
+     input: 0.4
+     output: 1.6
+     cache_read: 0.1
++    cache_creation: 0
+ gpt-4.1-nano:
+     input: 0.1
+     output: 0.4
+     cache_read: 0.025
++    cache_creation: 0
+ gpt-4.1-nano-2025-04-14:
+     input: 0.1
+     output: 0.4
+     cache_read: 0.025
++    cache_creation: 0
+ gpt-5:
+     input: 1.25
+     output: 10
+     cache_read: 0.125
++    cache_creation: 0
+ gpt-5-2025-08-07:
+     input: 1.25
+     output: 10
+     cache_read: 0.125
++    cache_creation: 0
+ gpt-5-chat:
+     input: 1.25
+     output: 10
+     cache_read: 0.125
++    cache_creation: 0
+ gpt-5-chat-latest:
+     input: 1.25
+     output: 10
+     cache_read: 0.125
++    cache_creation: 0
+ gpt-5-codex:
+     input: 1.25
+     output: 10
+     cache_read: 0.125
++    cache_creation: 0
+ gpt-5-mini:
+     input: 0.25
+     output: 2
+     cache_read: 0.025
++    cache_creation: 0
+ gpt-5-mini-2025-08-07:
+     input: 0.25
+     output: 2
+     cache_read: 0.025
++    cache_creation: 0
+ gpt-5-nano:
+     input: 0.05
+     output: 0.4
+     cache_read: 0.005
++    cache_creation: 0
+ gpt-5-nano-2025-08-07:
+     input: 0.05
+     output: 0.4
+     cache_read: 0.005
++    cache_creation: 0
+ gpt-5-pro:
+     input: 15
+     output: 120
+     cache_read: 0
++    cache_creation: 0
+ gpt-5-pro-2025-10-06:
+     input: 15
+     output: 120
+     cache_read: 0
++    cache_creation: 0
+ gpt-5-search-api:
+     input: 1.25
+     output: 10
+     cache_read: 0.125
++    cache_creation: 0
+ gpt-5-search-api-2025-10-14:
+     input: 1.25
+     output: 10
+     cache_read: 0.125
++    cache_creation: 0
+ gpt-5.1:
+     input: 1.25
+     output: 10
+     cache_read: 0.125
++    cache_creation: 0
+ gpt-5.1-2025-11-13:
+     input: 1.25
+     output: 10
+     cache_read: 0.125
++    cache_creation: 0
+ gpt-5.1-chat-latest:
+     input: 1.25
+     output: 10
+     cache_read: 0.125
++    cache_creation: 0
+ gpt-5.1-codex:
+     input: 1.25
+     output: 10
+     cache_read: 0.125
++    cache_creation: 0
+ gpt-5.1-codex-max:
+     input: 1.25
+     output: 10
+     cache_read: 0.125
++    cache_creation: 0
+ gpt-5.1-codex-mini:
+     input: 0.25
+     output: 2
+     cache_read: 0.025
++    cache_creation: 0
+ gpt-5.2:
+     input: 1.75
+     output: 14
+     cache_read: 0.175
++    cache_creation: 0
+ gpt-5.2-2025-12-11:
+     input: 1.75
+     output: 14
+     cache_read: 0.175
++    cache_creation: 0
+ gpt-5.2-chat-latest:
+     input: 1.75
+     output: 14
+     cache_read: 0.175
++    cache_creation: 0
+ gpt-5.2-codex:
+     input: 1.75
+     output: 14
+     cache_read: 0.175
++    cache_creation: 0
+ gpt-5.2-pro:
+     input: 21
+     output: 168
+     cache_read: 0
++    cache_creation: 0
+ gpt-5.2-pro-2025-12-11:
+     input: 21
+     output: 168
+     cache_read: 0
++    cache_creation: 0
+ gpt-5.3-chat-latest:
+     input: 1.75
+     output: 14
+     cache_read: 0.175
++    cache_creation: 0
+ gpt-5.3-codex:
+     input: 1.75
+     output: 14
+     cache_read: 0.175
++    cache_creation: 0
+ gpt-5.4:
+     input: 2.5
+     output: 15
+     cache_read: 0.25
++    cache_creation: 0
+ gpt-5.4-2026-03-05:
+     input: 2.5
+     output: 15
+     cache_read: 0.25
++    cache_creation: 0
+ gpt-5.4-mini:
+     input: 0.75
+     output: 4.5
+     cache_read: 0.075
++    cache_creation: 0
+ gpt-5.4-mini-2026-03-17:
+     input: 0.75
+     output: 4.5
+     cache_read: 0.075
++    cache_creation: 0
+ gpt-5.4-nano:
+     input: 0.2
+     output: 1.25
+     cache_read: 0.02
++    cache_creation: 0
+ gpt-5.4-nano-2026-03-17:
+     input: 0.2
+     output: 1.25
+     cache_read: 0.02
++    cache_creation: 0
+ gpt-5.4-pro:
+     input: 30
+     output: 180
+     cache_read: 3
++    cache_creation: 0
+ gpt-5.4-pro-2026-03-05:
+     input: 30
+     output: 180
+     cache_read: 3
++    cache_creation: 0
+ gpt-5.5:
+     input: 5
+     output: 30
+     cache_read: 0.5
++    cache_creation: 0
+ gpt-5.5-2026-04-23:
+     input: 5
+     output: 30
+     cache_read: 0.5
++    cache_creation: 0
+ gpt-5.5-pro:
+     input: 30
+     output: 180
+     cache_read: 3
++    cache_creation: 0
+ gpt-5.5-pro-2026-04-23:
+     input: 30
+     output: 180
+     cache_read: 3
++    cache_creation: 0
+ gpt-5.6:
+     input: 5
+     output: 30
+     cache_read: 0.5
++    cache_creation: 6.25
+ gpt-5.6-luna:
+     input: 1
+     output: 6
+     cache_read: 0.1
++    cache_creation: 1.25
+ gpt-5.6-sol:
+     input: 5
+     output: 30
+     cache_read: 0.5
++    cache_creation: 6.25
+ gpt-5.6-terra:
+     input: 2.5
+     output: 15
+     cache_read: 0.25
++    cache_creation: 3.125
+ gpt-audio:
+     input: 2.5
+     output: 10
+     cache_read: 0
++    cache_creation: 0
+ gpt-audio-1.5:
+     input: 2.5
+     output: 10
+     cache_read: 0
++    cache_creation: 0
+ gpt-audio-2025-08-28:
+     input: 2.5
+     output: 10
+     cache_read: 0
++    cache_creation: 0
+ gpt-audio-mini:
+     input: 0.6
+     output: 2.4
+     cache_read: 0
++    cache_creation: 0
+ gpt-audio-mini-2025-10-06:
+     input: 0.6
+     output: 2.4
+     cache_read: 0
++    cache_creation: 0
+ gpt-audio-mini-2025-12-15:
+     input: 0.6
+     output: 2.4
+     cache_read: 0
++    cache_creation: 0
+ gpt-image-1.5:
+     input: 5
+     output: 10
+     cache_read: 1.25
++    cache_creation: 0
+ gpt-image-1.5-2025-12-16:
+     input: 5
+     output: 10
+     cache_read: 1.25
++    cache_creation: 0
+ gpt-image-2:
+     input: 5
+     output: 10
+     cache_read: 1.25
++    cache_creation: 0
+ gpt-image-2-2026-04-21:
+     input: 5
+     output: 10
+     cache_read: 1.25
++    cache_creation: 0
+ gpt-realtime:
+     input: 4
+     output: 16
+     cache_read: 0.4
++    cache_creation: 0
+ gpt-realtime-1.5:
+     input: 4
+     output: 16
+     cache_read: 0.4
++    cache_creation: 0
+ gpt-realtime-2:
+     input: 4
+     output: 16
+     cache_read: 0.4
++    cache_creation: 0
+ gpt-realtime-2.1:
+     input: 4
+     output: 24
+     cache_read: 0.4
++    cache_creation: 0
+ gpt-realtime-2.1-mini:
+     input: 0.6
+     output: 2.4
+     cache_read: 0.06
++    cache_creation: 0
+ gpt-realtime-2025-08-28:
+     input: 4
+     output: 16
+     cache_read: 0.4
++    cache_creation: 0
+ gpt-realtime-mini:
+     input: 0.6
+     output: 2.4
+     cache_read: 0
++    cache_creation: 0
+ gpt-realtime-mini-2025-10-06:
+     input: 0.6
+     output: 2.4
+     cache_read: 0.06
++    cache_creation: 0
+ gpt-realtime-mini-2025-12-15:
+     input: 0.6
+     output: 2.4
+     cache_read: 0.06
++    cache_creation: 0
+ o1:
+     input: 15
+     output: 60
+     cache_read: 7.5
++    cache_creation: 0
+ o1-2024-12-17:
+     input: 15
+     output: 60
+     cache_read: 7.5
++    cache_creation: 0
+ o1-pro:
+     input: 150
+     output: 600
+     cache_read: 0
++    cache_creation: 0
+ o1-pro-2025-03-19:
+     input: 150
+     output: 600
+     cache_read: 0
++    cache_creation: 0
+ o3:
+     input: 2
+     output: 8
+     cache_read: 0.5
++    cache_creation: 0
+ o3-2025-04-16:
+     input: 2
+     output: 8
+     cache_read: 0.5
++    cache_creation: 0
+ o3-deep-research:
+     input: 10
+     output: 40
+     cache_read: 2.5
++    cache_creation: 0
+ o3-deep-research-2025-06-26:
+     input: 10
+     output: 40
+     cache_read: 2.5
++    cache_creation: 0
+ o3-mini:
+     input: 1.1
+     output: 4.4
+     cache_read: 0.55
++    cache_creation: 0
+ o3-mini-2025-01-31:
+     input: 1.1
+     output: 4.4
+     cache_read: 0.55
++    cache_creation: 0
+ o3-pro:
+     input: 20
+     output: 80
+     cache_read: 0
++    cache_creation: 0
+ o3-pro-2025-06-10:
+     input: 20
+     output: 80
+     cache_read: 0
++    cache_creation: 0
+ o4-mini:
+     input: 1.1
+     output: 4.4
+     cache_read: 0.275
++    cache_creation: 0
+ o4-mini-2025-04-16:
+     input: 1.1
+     output: 4.4
+     cache_read: 0.275
++    cache_creation: 0
+ o4-mini-deep-research:
+     input: 2
+     output: 8
+     cache_read: 0.5
++    cache_creation: 0
+ o4-mini-deep-research-2025-06-26:
+     input: 2
+     output: 8
+     cache_read: 0.5
++    cache_creation: 0
+diff --git a/scripts/issue-cost.sh b/scripts/issue-cost.sh
+index 3cb1962..ad21455 100755
+--- a/scripts/issue-cost.sh
++++ b/scripts/issue-cost.sh
+@@ -53,12 +53,56 @@ done
+ WORK="$(mktemp -d)"
+ trap 'rm -rf "${WORK}"' EXIT
+ 
++# Auto-discover linked PRs from the issue timeline (cross-referenced PRs in the
++# same repo) and union them with any --pr args: the pipeline record's pr_ref is
++# usually unwritten (CONTRACTS §9.5), and review/deploy stages post their usage
++# markers on the PR — missing those would silently undercount the issue.
++TIMELINE="$("$GH" api "repos/${REPO}/issues/${NUM}/timeline" --paginate 2>/dev/null || true)"
++if [[ -n "${TIMELINE}" ]]; then
++  DISCOVERED="$(TIMELINE_JSON="${TIMELINE}" REPO_ARG="${REPO}" python3 - <<'PYEOF'
++import json, os
++
++def decode_pages(text):
++    dec, idx, out = json.JSONDecoder(), 0, []
++    text = text.strip()
++    while idx < len(text):
++        try:
++            doc, end = dec.raw_decode(text, idx)
++        except ValueError:
++            break
++        out.extend(doc if isinstance(doc, list) else [doc])
++        idx = end
++        while idx < len(text) and text[idx] in " \t\r\n":
++            idx += 1
++    return out
++
++repo = os.environ["REPO_ARG"]
++nums = set()
++for ev in decode_pages(os.environ["TIMELINE_JSON"]):
++    if not isinstance(ev, dict) or ev.get("event") != "cross-referenced":
++        continue
++    src = (ev.get("source") or {}).get("issue") or {}
++    if "pull_request" not in src:
++        continue
++    if ((src.get("repository") or {}).get("full_name") or repo) != repo:
++        continue
++    if src.get("number"):
++        nums.add(str(src["number"]))
++print(" ".join(sorted(nums)))
++PYEOF
++)"
++  for pr in ${DISCOVERED}; do
++    [[ " ${PRS[*]:-} " == *" ${pr} "* ]] || PRS+=("${pr}")
++  done
++fi
++
+ # Comments from the issue and every linked PR (the issues comments endpoint
+ # serves both), plus the issue body (mini-charter marker lives there).
+ "$GH" api "repos/${REPO}/issues/${NUM}/comments" --paginate > "${WORK}/comments-issue.json" 2>/dev/null || echo '[]' > "${WORK}/comments-issue.json"
+ "$GH" api "repos/${REPO}/issues/${NUM}" > "${WORK}/issue.json" 2>/dev/null || echo '{}' > "${WORK}/issue.json"
+ for pr in "${PRS[@]:-}"; do
+   [[ -z "${pr}" ]] && continue
++  [[ "${pr}" == "${NUM}" ]] && continue
+   "$GH" api "repos/${REPO}/issues/${pr}/comments" --paginate > "${WORK}/comments-pr-${pr}.json" 2>/dev/null || echo '[]' > "${WORK}/comments-pr-${pr}.json"
+ done
+ [[ -n "${METRICS_FILE}" && -r "${METRICS_FILE}" ]] && cp "${METRICS_FILE}" "${WORK}/metrics.json"
+@@ -125,13 +169,28 @@ USAGE = re.compile(r"<!-- falcon:usage:v1 (\{.*?\}) -->", re.S)
+ USAGE_FENCED = re.compile(r"<!-- falcon:usage:v1 -->\s*```json\s*(\{.*?\})\s*```", re.S)
+ CHARTER = re.compile(r"<!-- falcon:charter:v1 (\{.*?\}) -->", re.S)
+ 
++# `gh api --paginate` emits one JSON array PER PAGE, concatenated — decode
++# document-by-document (a single json.load fails past 100 comments and would
++# silently drop every marker on a busy issue).
++def decode_pages(text):
++    dec, idx, out = json.JSONDecoder(), 0, []
++    text = text.strip()
++    while idx < len(text):
++        try:
++            doc, end = dec.raw_decode(text, idx)
++        except ValueError:
++            break
++        out.extend(doc if isinstance(doc, list) else [doc])
++        idx = end
++        while idx < len(text) and text[idx] in " \t\r\n":
++            idx += 1
++    return out
++
+ reports, charter = [], None
+ bodies = []
+ for path in sorted(glob.glob(os.path.join(work, "comments-*.json"))):
+-    try:
+-        data = json.load(open(path))
+-    except ValueError:
+-        continue
++    with open(path) as f:
++        data = decode_pages(f.read())
+     bodies += [c.get("body") or "" for c in data if isinstance(c, dict)]
+ try:
+     issue_obj = json.load(open(os.path.join(work, "issue.json")))
+@@ -221,11 +280,17 @@ if os.path.exists(mpath):
+         rows = None
+     if isinstance(rows, list):
+         agents = {s.get("agent") for s in stages}
+-        win_cost = sum(r.get("costUsd") or 0.0 for r in rows if r.get("agent") in agents)
++        crows = [r for r in rows if r.get("agent") in agents]
++        win_cost = sum(r.get("costUsd") or 0.0 for r in crows)
+         mnotes = ["window attribution — includes any concurrent work by the same agents"]
+         has_output = any("output" in (r.get("tokens") or {}) for r in rows)
+         if not has_output:
+             mnotes.append("platform metric excludes output tokens (kyber gap — fix pending)")
++        # kyber emits costUsd:0 as an explicit placeholder on priced:false rows;
++        # summing those zeros silently would understate the window — label it.
++        unpriced_rows = sorted({r.get("model") or "?" for r in crows if r.get("priced") is False})
++        if unpriced_rows:
++            mnotes.append("window total excludes unpriced rows: %s" % ", ".join(unpriced_rows))
+         metrics_check = {"window_cost_usd": round(win_cost, 2), "notes": mnotes}
+ 
+ row = {
+@@ -254,6 +319,12 @@ row = {
+ }
+ if not stages:
+     row["totals"]["cost_notes"].append("no falcon:usage:v1 reports found — cost unavailable")
++elif row["totals"]["priced"] and not any(totals.values()):
++    # Stages reported but measured nothing at all: a confident $0.00 is the one
++    # number the charter bans — render it unpriced instead.
++    row["totals"]["priced"] = False
++    row["totals"]["cost_usd"] = None
++    row["totals"]["cost_notes"].append("all stages measured zero tokens — implausible for LLM work, cost unavailable")
+ if len(variants) > 1:
+     row["totals"]["cost_notes"].append("MIXED charter variants mid-issue: %s" % ", ".join(sorted(variants)))
+ print(json.dumps(row, sort_keys=True))
+diff --git a/scripts/tests/test_issue_cost.sh b/scripts/tests/test_issue_cost.sh
+index 9576e42..cfcd88d 100755
+--- a/scripts/tests/test_issue_cost.sh
++++ b/scripts/tests/test_issue_cost.sh
+@@ -136,6 +136,56 @@ R="$("${SUT}" matty-v/snapdex#46 --metrics-json "${SBX}/metrics.json")"
+ [[ "$(echo "$R" | jqget metrics_check.window_cost_usd)" == "3.1" ]] && pass "cross-check sums contributors only" || fail "xcheck sum: $R"
+ echo "$R" | grep -q "excludes output tokens" && pass "output-gap labeled" || fail "xcheck label: $R"
+ 
++# --- timeline auto-discovery + paginated (concatenated) comment arrays ------
++python3 - "$SBX" \
++  "$(usage_marker han s claude-sonnet-4-5 1000000 0 0 0 exact)" \
++  "$(usage_marker chewie merge-requested claude-sonnet-4-5 500000 0 0 0 exact)" <<'PYEOF'
++import json, os, sys
++sbx, han, chewie = sys.argv[1:4]
++g = lambda name, s: open(os.path.join(sbx, "gh", name), "w").write(s)
++# Issue comments arrive as TWO concatenated pages (gh --paginate emits one
++# array per page) — the han marker is in page 2.
++g("repos_matty-v_snapdex_issues_47_comments.json",
++  json.dumps([{"body": "noise"}]) + json.dumps([{"body": han}]))
++g("repos_matty-v_snapdex_issues_47.json", json.dumps({"title": "t", "body": ""}))
++# Timeline cross-references PR 88 (same repo) and an out-of-repo PR (ignored).
++g("repos_matty-v_snapdex_issues_47_timeline.json", json.dumps([
++  {"event": "cross-referenced", "source": {"issue": {"number": 88, "pull_request": {},
++     "repository": {"full_name": "matty-v/snapdex"}}}},
++  {"event": "cross-referenced", "source": {"issue": {"number": 999, "pull_request": {},
++     "repository": {"full_name": "matty-v/other"}}}},
++  {"event": "labeled"}]))
++g("repos_matty-v_snapdex_issues_88_comments.json", json.dumps([{"body": chewie}]))
++PYEOF
++R="$("${SUT}" matty-v/snapdex#47)"   # note: NO --pr args — discovery must find 88
++[[ "$(echo "$R" | jqget totals.tokens.input)" == "1500000" ]] && pass "paginated pages + discovered PR both counted" || fail "discovery: $R"
++S="$(echo "$R" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["stages"]))')"
++[[ "$S" == "2" ]] && pass "PR 88 auto-discovered from timeline (2 stages)" || fail "stages: $R"
++
++# --- all-zero stages → priced=false, never a confident \$0.00 ----------------
++python3 - "$SBX" "$(usage_marker han s claude-sonnet-4-5 0 0 0 0 exact)" <<'PYEOF'
++import json, os, sys
++sbx, m = sys.argv[1:3]
++json.dump([{"body": m}], open(os.path.join(sbx, "gh", "repos_matty-v_snapdex_issues_48_comments.json"), "w"))
++json.dump({"title": "t", "body": ""}, open(os.path.join(sbx, "gh", "repos_matty-v_snapdex_issues_48.json"), "w"))
++PYEOF
++R="$("${SUT}" matty-v/snapdex#48)"
++[[ "$(echo "$R" | jqget totals.priced)" == "False" ]] && pass "all-zero stages → priced=false" || fail "zero: $R"
++echo "$R" | grep -q "implausible for LLM work" && pass "zero-total reason named" || fail "zero reason: $R"
++
++# --- cross-check labels unpriced metrics rows -------------------------------
++cat > "${SBX}/metrics2.json" <<'EOF'
++[{"agent":"han","model":"claude-mystery","tokens":{"input":10},"costUsd":0,"priced":false}]
++EOF
++python3 - "$SBX" "$(usage_marker han s claude-sonnet-4-5 1000 100 0 0 exact)" <<'PYEOF'
++import json, os, sys
++sbx, m = sys.argv[1:3]
++json.dump([{"body": m}], open(os.path.join(sbx, "gh", "repos_matty-v_snapdex_issues_49_comments.json"), "w"))
++json.dump({"title": "t", "body": ""}, open(os.path.join(sbx, "gh", "repos_matty-v_snapdex_issues_49.json"), "w"))
++PYEOF
++R="$("${SUT}" matty-v/snapdex#49 --metrics-json "${SBX}/metrics2.json")"
++echo "$R" | grep -q "excludes unpriced rows: claude-mystery" && pass "unpriced metrics rows labeled" || fail "unpriced label: $R"
++
+ echo
+ echo "issue-cost: ${PASS} passed, ${FAIL} failed"
+ [[ "${FAIL}" -eq 0 ]]
+diff --git a/scripts/tests/test_token_usage.sh b/scripts/tests/test_token_usage.sh
+index 7d09cdd..9c5970d 100755
+--- a/scripts/tests/test_token_usage.sh
++++ b/scripts/tests/test_token_usage.sh
+@@ -95,6 +95,61 @@ R="$("${SUT}" report env-nope --stage s --issue matty-v/snapdex#42)"
+ [[ "$(echo "$R" | jqget quality)" == "unavailable" ]] && pass "missing baseline → unavailable" || fail "missing baseline: $R"
+ echo "$R" | grep -q '"models": {}' || echo "$R" | grep -q '"models":{}' && pass "no fabricated counts" || fail "fabricated: $R"
+ 
++# --- 6b. resumed session replaying history must not fabricate spend ---------
++# A --resume writes a NEW file replaying old message ids. Oldest-mtime-first
++# scanning keeps replayed entries attributed to the original file, so the
++# report sees only genuinely-new messages (lexical order would attribute the
++# replay to the new file ~half the time and count pre-baseline history).
++make_sandbox
++line claude-sonnet-4-5 100 10 5000000 200 standard m1 > "${CLAUDE_PROJECTS_DIR}/slug-a/z-old-session.jsonl"
++touch -t 202608070900 "${CLAUDE_PROJECTS_DIR}/slug-a/z-old-session.jsonl"
++"${SUT}" baseline env-resume >/dev/null
++{ line claude-sonnet-4-5 100 10 5000000 200 standard m1;   # replayed history
++  line claude-sonnet-4-5 7 3 0 0 standard m-new; } > "${CLAUDE_PROJECTS_DIR}/slug-a/a-resumed.jsonl"
++touch -t 202608071000 "${CLAUDE_PROJECTS_DIR}/slug-a/a-resumed.jsonl"
++R="$("${SUT}" report env-resume --stage s --issue matty-v/snapdex#42)"
++[[ "$(echo "$R" | jqget models.claude-sonnet-4-5.input)" == "7" ]] && pass "resume replay not double-counted" || fail "resume: $R"
++[[ "$(echo "$R" | jqget quality)" == "exact" ]] && pass "resume is not a discontinuity" || fail "resume quality: $R"
++
++# --- 6c. empty projects tree → unavailable, never exact-zero ----------------
++make_sandbox
++"${SUT}" baseline env-empty >/dev/null
++R="$("${SUT}" report env-empty --stage s --issue matty-v/snapdex#42)"
++[[ "$(echo "$R" | jqget quality)" == "unavailable" ]] && pass "empty tree → unavailable" || fail "empty tree: $R"
++echo "$R" | grep -q "projects dir empty or misconfigured" && pass "empty-tree reason named" || fail "empty reason: $R"
++
++# --- 6d. baseline prunes zero-usage files (comment-size bound) --------------
++make_sandbox
++line claude-sonnet-4-5 10 1 0 0 standard m1 > "${T1}"
++printf '{"type":"user","uuid":"u1"}\n' > "${CLAUDE_PROJECTS_DIR}/slug-a/no-usage.jsonl"
++B="$("${SUT}" baseline env-prune)"
++echo "$B" | grep -q "no-usage.jsonl" && fail "zero-usage file not pruned" || pass "zero-usage file pruned from baseline"
++
++# --- 6e. baseline recovery: fenced form + paginated (concatenated) arrays ---
++make_sandbox
++mkdir -p "${SBX}/ghstub"
++line claude-sonnet-4-5 100 10 1000 200 standard m1 > "${T1}"
++B_JSON="$("${SUT}" baseline env-rec)"
++rm -rf "${FALCON_RUNTIME_DIR}"           # simulate pod recycle
++{ line claude-sonnet-4-5 100 10 1000 200 standard m1; line claude-sonnet-4-5 40 4 400 40 standard m2; } > "${T1}"
++# Stub gh-issue.sh: serve TWO concatenated arrays (gh --paginate page-per-array),
++# with the baseline in the SECOND page wrapped in the FENCED form.
++STUB="${SBX}/ghstub/gh-issue.sh"
++cat > "${STUB}" <<STUBEOF
++#!/usr/bin/env bash
++cat "${SBX}/ghstub/pages.txt"
++STUBEOF
++python3 - "${SBX}/ghstub/pages.txt" "$B_JSON" <<'PYEOF'
++import json, sys
++fenced = "<!-- falcon:usage-baseline:v1 -->\n```json\n" + sys.argv[2] + "\n```"
++open(sys.argv[1], "w").write(json.dumps([{"body": "noise"}]) + json.dumps([{"body": fenced}]))
++PYEOF
++chmod +x "${STUB}"
++# Point the script's gh wrapper at the stub by shadowing hooks/gh-issue.sh via PATH-free env:
++R="$(FALCON_GH_ISSUE_OVERRIDE="${STUB}" "${SUT}" report env-rec --stage s --issue matty-v/snapdex#42)"
++[[ "$(echo "$R" | jqget quality)" == "exact" ]] && pass "fenced+paginated baseline recovered" || fail "recovery: $R"
++[[ "$(echo "$R" | jqget models.claude-sonnet-4-5.input)" == "40" ]] && pass "recovered delta correct" || fail "recovered delta: $R"
++
+ # --- 7. marker forms --------------------------------------------------------
+ make_sandbox
+ line claude-sonnet-4-5 10 1 0 0 standard m1 > "${T1}"
+diff --git a/scripts/token-usage.sh b/scripts/token-usage.sh
+index 9608f29..a48a869 100755
+--- a/scripts/token-usage.sh
++++ b/scripts/token-usage.sh
+@@ -73,7 +73,20 @@ root = sys.argv[1]
+ ZERO = lambda: {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0, "api_calls": 0}
+ files, totals, seen = {}, {}, set()
+ 
+-for path in sorted(glob.glob(os.path.join(root, "*", "*.jsonl"))):
++def mtime(p):
++    try:
++        return os.path.getmtime(p)
++    except OSError:
++        return 0.0
++
++# Scan OLDEST-mtime first (path as tiebreak): a resumed/continued session
++# writes a NEW file replaying prior history under the SAME message ids, and
++# dedup attributes an id to whichever file is scanned first. Oldest-first keeps
++# replayed entries attributed to their original file, so at report time the old
++# file's counts never "shrink" (no false discontinuity) and the new file
++# contributes only genuinely new messages — lexical order would attribute
++# pre-baseline history to the new file ~half the time and fabricate spend.
++for path in sorted(glob.glob(os.path.join(root, "*", "*.jsonl")), key=lambda p: (mtime(p), p)):
+     per = {}
+     try:
+         with open(path, encoding="utf-8", errors="replace") as f:
+@@ -140,8 +153,12 @@ cmd_baseline() {
+   json="$(SCAN_JSON="${scan}" python3 - "$envelope" "$taken" <<'PYEOF'
+ import json, os, sys
+ scan = json.loads(os.environ["SCAN_JSON"])
++# Prune zero-usage files: the baseline rides inside a GitHub comment, so it must
++# stay bounded. A file absent from the baseline counts IN FULL at report time,
++# which is exactly right for a file that had no finalized usage at baseline.
++files = {p: f for p, f in scan["files"].items() if f.get("models")}
+ print(json.dumps({"v": 1, "envelope_id": sys.argv[1], "taken_at": sys.argv[2],
+-                  "files": scan["files"], "totals": scan["totals"]}, sort_keys=True))
++                  "files": files, "totals": scan["totals"]}, sort_keys=True))
+ PYEOF
+ )"
+   printf '%s\n' "${json}" > "${file}"
+@@ -149,31 +166,53 @@ PYEOF
+ }
+ 
+ # recover_baseline <envelope> <owner/repo#N> — pull the baseline marker back out
+-# of the issue's pickup comment. Prints baseline JSON or nothing.
++# of its comment on the issue/PR. Prints baseline JSON or nothing.
++# FALCON_GH_ISSUE_OVERRIDE points tests at a stub wrapper.
+ recover_baseline() {
+   local envelope="$1" issue="$2"
+   local repo="${issue%#*}" num="${issue##*#}"
++  local gh_wrapper="${FALCON_GH_ISSUE_OVERRIDE:-${SCRIPT_ROOT}/hooks/gh-issue.sh}"
+   local comments
+-  comments="$("${SCRIPT_ROOT}/hooks/gh-issue.sh" api "repos/${repo}/issues/${num}/comments" --paginate 2>/dev/null || true)"
++  comments="$("${gh_wrapper}" api "repos/${repo}/issues/${num}/comments" --paginate 2>/dev/null || true)"
+   [[ -z "${comments}" ]] && return 0
+   COMMENTS_JSON="${comments}" python3 - "$envelope" <<'PYEOF'
+ import json, os, re, sys
+ 
+ envelope = sys.argv[1]
+-try:
+-    comments = json.loads(os.environ["COMMENTS_JSON"])
+-except ValueError:
+-    sys.exit(0)
+-pat = re.compile(r"<!-- falcon:usage-baseline:v1 (\{.*?\}) -->", re.S)
+-for c in comments if isinstance(comments, list) else []:
+-    for m in pat.finditer(c.get("body") or ""):
++
++# `gh api --paginate` emits ONE JSON ARRAY PER PAGE, concatenated — a single
++# json.loads chokes past 100 comments. Decode document-by-document and flatten.
++def decode_pages(text):
++    dec, idx, out = json.JSONDecoder(), 0, []
++    text = text.strip()
++    while idx < len(text):
+         try:
+-            b = json.loads(m.group(1))
++            doc, end = dec.raw_decode(text, idx)
+         except ValueError:
+-            continue
+-        if b.get("envelope_id") == envelope:
+-            print(json.dumps(b, sort_keys=True))
+-            sys.exit(0)
++            break
++        out.extend(doc if isinstance(doc, list) else [doc])
++        idx = end
++        while idx < len(text) and text[idx] in " \t\r\n":
++            idx += 1
++    return out
++
++comments = decode_pages(os.environ["COMMENTS_JSON"])
++# Both marker forms: the one-liner AND the fenced fallback wrap_marker emits
++# when the JSON contains "--" (transcript-path slugs genuinely produce that).
++pats = (re.compile(r"<!-- falcon:usage-baseline:v1 (\{.*?\}) -->", re.S),
++        re.compile(r"<!-- falcon:usage-baseline:v1 -->\s*```json\s*(\{.*?\})\s*```", re.S))
++for c in comments:
++    if not isinstance(c, dict):
++        continue
++    for pat in pats:
++        for m in pat.finditer(c.get("body") or ""):
++            try:
++                b = json.loads(m.group(1))
++            except ValueError:
++                continue
++            if b.get("envelope_id") == envelope:
++                print(json.dumps(b, sort_keys=True))
++                sys.exit(0)
+ PYEOF
+ }
+ 
+@@ -213,6 +252,14 @@ out = {"v": 1, "agent": agent, "envelope_id": envelope, "stage_label": stage,
+        "issue": issue, "window": {"from": None, "to": now}, "models": {},
+        "charter_variant": variant, "quality": "exact", "reason": None}
+ 
++# A completely empty scan means the projects dir is empty or misconfigured —
++# an LLM agent that did any work HAS transcript usage. "exact 0" here would
++# flow downstream as a confident $0.00, the one number CONTRACTS §10 bans.
++if not scan["totals"]:
++    out["quality"], out["reason"] = "unavailable", "no transcript activity measured — projects dir empty or misconfigured"
++    print(json.dumps(out, sort_keys=True))
++    sys.exit(0)
++
+ if not raw.strip():
+     out["quality"], out["reason"] = "unavailable", "no baseline (pod recycled before pickup comment landed)"
+     print(json.dumps(out, sort_keys=True))
+diff --git a/skills/handle-inbound.md b/skills/handle-inbound.md
+index 2f6b381..15024b8 100644
+--- a/skills/handle-inbound.md
++++ b/skills/handle-inbound.md
+@@ -120,11 +120,20 @@ in-flight picture from this comment, so a dispatch without one is invisible to s
+ ```bash
+ GH="${HOME}/dev/${AGENT_NAME}-agent/vendor/falcon-dev-common/hooks/gh-issue.sh"
+ TU="${HOME}/dev/${AGENT_NAME}-agent/vendor/falcon-dev-common/scripts/token-usage.sh"
+-USAGE_BASELINE="$("$TU" baseline "<envelope_id>" --marker 2>>"$AGENT_HOME/memory/dispatches.md" || true)"
++
++# 1) The pickup comment — ALWAYS posted bare, exactly this shape. The baseline
++#    goes in a SEPARATE follow-up comment so an oversized or failed baseline can
++#    never take the load-bearing falcon:pickup marker down with it.
+ "$GH" api "repos/<repo>/issues/<number>/comments" -f body="<!-- falcon:pickup -->
+-**${AGENT_NAME}** picked up \`<stage_label>\` · ETA <estimate> · envelope \`<envelope_id>\`
+-${USAGE_BASELINE}" \
++**${AGENT_NAME}** picked up \`<stage_label>\` · ETA <estimate> · envelope \`<envelope_id>\`" \
+   2>>"$AGENT_HOME/memory/dispatches.md" || true   # non-blocking, but LOG loudly
++
++# 2) The usage baseline — its own comment, right after (CONTRACTS §10.1).
++USAGE_BASELINE="$("$TU" baseline "<envelope_id>" --marker 2>>"$AGENT_HOME/memory/dispatches.md" || true)"
++if [ -n "$USAGE_BASELINE" ]; then
++  "$GH" api "repos/<repo>/issues/<number>/comments" -f body="${USAGE_BASELINE}" \
++    2>>"$AGENT_HOME/memory/dispatches.md" || true
++fi
+ ```
+ 
+ Use the `api` form, not `gh issue comment` — `POST /issues/<n>/comments` is the one call that works
+@@ -132,10 +141,10 @@ for **both** an issue and a PR number, and it is the documented in-scope path fo
+ 
+ - **The `<!-- falcon:pickup -->` marker is load-bearing** — `/recover-stalls` parses on it. Don't
+   reformat it.
+-- **The `<!-- falcon:usage-baseline:v1 … -->` line is your stage's token-usage baseline**
+-  (CONTRACTS §10). It rides inside this comment so it survives a pod recycle (`.runtime/` does
+-  not). If `token-usage.sh` fails, post the pickup comment WITHOUT it and log — never block, and
+-  never invent a baseline.
++- **The `<!-- falcon:usage-baseline:v1 … -->` comment is your stage's token-usage baseline**
++  (CONTRACTS §10.1). It lives on GitHub so it survives a pod recycle (`.runtime/` does not), and
++  it is a SEPARATE comment so it can never break the pickup marker. If `token-usage.sh` fails,
++  skip it and log — never block, and never invent a baseline.
+ - **The ETA must be explicit and unit-bearing** (`45m`, `2h`, `60-90m`) — it is the number a stall is
+   measured against, and an ETA that can't be parsed silently falls back to a shorter stage default.
+   Give the **high end** of any range.
+@@ -287,12 +296,28 @@ short-name, e.g. `• 📊 ~10.4M tokens this stage (sonnet)`. If the report's `
+ `unavailable`, the bullet is `• 📊 token usage unavailable (<reason>)` — **never 0, never a
+ guess**; a `lower_bound` report reads `• 📊 ≥8.2M tokens this stage (sonnet)`.
+ 
++**COMPLETION COMMENT on the issue — REQUIRED (Dave per Matt, 2026-08-02).** The counterpart to the
++pickup comment. Without it the item never leaves `/recover-stalls`'s in-flight rebuild and will be
++re-dispatched as a false stall. The usage report is computed IN THE SAME block (shell state does
++not persist between separately-executed blocks — a report computed in an earlier block would
++interpolate as empty and silently drop your usage marker):
++
+ ```bash
++GH="${HOME}/dev/${AGENT_NAME}-agent/vendor/falcon-dev-common/hooks/gh-issue.sh"
+ TU="${HOME}/dev/${AGENT_NAME}-agent/vendor/falcon-dev-common/scripts/token-usage.sh"
+-USAGE_REPORT="$("$TU" report "<envelope_id>" --stage "<stage_label>" --issue "<repo>#<issue-number>" \
++# --issue takes the SAME <number> you posted your pickup comment on — for
++# review/deploy stages that is the PR number (baseline recovery searches there).
++USAGE_REPORT="$("$TU" report "<envelope_id>" --stage "<stage_label>" --issue "<repo>#<number>" \
+   --marker 2>>"$AGENT_HOME/memory/dispatches.md" || true)"
++"$GH" api "repos/<repo>/issues/<number>/comments" -f body="<!-- falcon:complete -->
++**${AGENT_NAME}** finished \`<stage_label>\` · outcome \`<success|error|held>\` · envelope \`<envelope_id>\`
++${USAGE_REPORT}" \
++  2>>"$AGENT_HOME/memory/dispatches.md" || true
+ ```
+ 
++Then the OUTCOME Discord post (derive the 📊 bullet from the `USAGE_REPORT` JSON you just
++computed — same block or re-read it from your own completion comment):
++
+ ```bash
+ DP="${HOME}/dev/${AGENT_NAME}-agent/vendor/falcon-dev-common/scripts/discord-post.sh"
+ if [ -n "${USER_DISCORD_WEBHOOK_URL:-}" ]; then
+@@ -301,18 +326,6 @@ if [ -n "${USER_DISCORD_WEBHOOK_URL:-}" ]; then
+ fi
+ ```
+ 
+-**COMPLETION COMMENT on the issue — REQUIRED (Dave per Matt, 2026-08-02).** The counterpart to the
+-pickup comment. Without it the item never leaves `/recover-stalls`'s in-flight rebuild and will be
+-re-dispatched as a false stall.
+-
+-```bash
+-GH="${HOME}/dev/${AGENT_NAME}-agent/vendor/falcon-dev-common/hooks/gh-issue.sh"
+-"$GH" api "repos/<repo>/issues/<number>/comments" -f body="<!-- falcon:complete -->
+-**${AGENT_NAME}** finished \`<stage_label>\` · outcome \`<success|error|held>\` · envelope \`<envelope_id>\`
+-${USAGE_REPORT}" \
+-  2>>"$AGENT_HOME/memory/dispatches.md" || true
+-```
+-
+ The `<!-- falcon:usage:v1 … -->` line inside the completion comment is what Lando aggregates into
+ the issue's final cost at close (CONTRACTS §10). Same failure contract as the comment itself:
+ non-blocking, loudly logged, never fabricated.

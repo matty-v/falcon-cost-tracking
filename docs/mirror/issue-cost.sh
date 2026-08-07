@@ -53,12 +53,56 @@ done
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
 
+# Auto-discover linked PRs from the issue timeline (cross-referenced PRs in the
+# same repo) and union them with any --pr args: the pipeline record's pr_ref is
+# usually unwritten (CONTRACTS §9.5), and review/deploy stages post their usage
+# markers on the PR — missing those would silently undercount the issue.
+TIMELINE="$("$GH" api "repos/${REPO}/issues/${NUM}/timeline" --paginate 2>/dev/null || true)"
+if [[ -n "${TIMELINE}" ]]; then
+  DISCOVERED="$(TIMELINE_JSON="${TIMELINE}" REPO_ARG="${REPO}" python3 - <<'PYEOF'
+import json, os
+
+def decode_pages(text):
+    dec, idx, out = json.JSONDecoder(), 0, []
+    text = text.strip()
+    while idx < len(text):
+        try:
+            doc, end = dec.raw_decode(text, idx)
+        except ValueError:
+            break
+        out.extend(doc if isinstance(doc, list) else [doc])
+        idx = end
+        while idx < len(text) and text[idx] in " \t\r\n":
+            idx += 1
+    return out
+
+repo = os.environ["REPO_ARG"]
+nums = set()
+for ev in decode_pages(os.environ["TIMELINE_JSON"]):
+    if not isinstance(ev, dict) or ev.get("event") != "cross-referenced":
+        continue
+    src = (ev.get("source") or {}).get("issue") or {}
+    if "pull_request" not in src:
+        continue
+    if ((src.get("repository") or {}).get("full_name") or repo) != repo:
+        continue
+    if src.get("number"):
+        nums.add(str(src["number"]))
+print(" ".join(sorted(nums)))
+PYEOF
+)"
+  for pr in ${DISCOVERED}; do
+    [[ " ${PRS[*]:-} " == *" ${pr} "* ]] || PRS+=("${pr}")
+  done
+fi
+
 # Comments from the issue and every linked PR (the issues comments endpoint
 # serves both), plus the issue body (mini-charter marker lives there).
 "$GH" api "repos/${REPO}/issues/${NUM}/comments" --paginate > "${WORK}/comments-issue.json" 2>/dev/null || echo '[]' > "${WORK}/comments-issue.json"
 "$GH" api "repos/${REPO}/issues/${NUM}" > "${WORK}/issue.json" 2>/dev/null || echo '{}' > "${WORK}/issue.json"
 for pr in "${PRS[@]:-}"; do
   [[ -z "${pr}" ]] && continue
+  [[ "${pr}" == "${NUM}" ]] && continue
   "$GH" api "repos/${REPO}/issues/${pr}/comments" --paginate > "${WORK}/comments-pr-${pr}.json" 2>/dev/null || echo '[]' > "${WORK}/comments-pr-${pr}.json"
 done
 [[ -n "${METRICS_FILE}" && -r "${METRICS_FILE}" ]] && cp "${METRICS_FILE}" "${WORK}/metrics.json"
@@ -125,13 +169,28 @@ USAGE = re.compile(r"<!-- falcon:usage:v1 (\{.*?\}) -->", re.S)
 USAGE_FENCED = re.compile(r"<!-- falcon:usage:v1 -->\s*```json\s*(\{.*?\})\s*```", re.S)
 CHARTER = re.compile(r"<!-- falcon:charter:v1 (\{.*?\}) -->", re.S)
 
+# `gh api --paginate` emits one JSON array PER PAGE, concatenated — decode
+# document-by-document (a single json.load fails past 100 comments and would
+# silently drop every marker on a busy issue).
+def decode_pages(text):
+    dec, idx, out = json.JSONDecoder(), 0, []
+    text = text.strip()
+    while idx < len(text):
+        try:
+            doc, end = dec.raw_decode(text, idx)
+        except ValueError:
+            break
+        out.extend(doc if isinstance(doc, list) else [doc])
+        idx = end
+        while idx < len(text) and text[idx] in " \t\r\n":
+            idx += 1
+    return out
+
 reports, charter = [], None
 bodies = []
 for path in sorted(glob.glob(os.path.join(work, "comments-*.json"))):
-    try:
-        data = json.load(open(path))
-    except ValueError:
-        continue
+    with open(path) as f:
+        data = decode_pages(f.read())
     bodies += [c.get("body") or "" for c in data if isinstance(c, dict)]
 try:
     issue_obj = json.load(open(os.path.join(work, "issue.json")))
@@ -221,11 +280,17 @@ if os.path.exists(mpath):
         rows = None
     if isinstance(rows, list):
         agents = {s.get("agent") for s in stages}
-        win_cost = sum(r.get("costUsd") or 0.0 for r in rows if r.get("agent") in agents)
+        crows = [r for r in rows if r.get("agent") in agents]
+        win_cost = sum(r.get("costUsd") or 0.0 for r in crows)
         mnotes = ["window attribution — includes any concurrent work by the same agents"]
         has_output = any("output" in (r.get("tokens") or {}) for r in rows)
         if not has_output:
             mnotes.append("platform metric excludes output tokens (kyber gap — fix pending)")
+        # kyber emits costUsd:0 as an explicit placeholder on priced:false rows;
+        # summing those zeros silently would understate the window — label it.
+        unpriced_rows = sorted({r.get("model") or "?" for r in crows if r.get("priced") is False})
+        if unpriced_rows:
+            mnotes.append("window total excludes unpriced rows: %s" % ", ".join(unpriced_rows))
         metrics_check = {"window_cost_usd": round(win_cost, 2), "notes": mnotes}
 
 row = {
@@ -254,6 +319,12 @@ row = {
 }
 if not stages:
     row["totals"]["cost_notes"].append("no falcon:usage:v1 reports found — cost unavailable")
+elif row["totals"]["priced"] and not any(totals.values()):
+    # Stages reported but measured nothing at all: a confident $0.00 is the one
+    # number the charter bans — render it unpriced instead.
+    row["totals"]["priced"] = False
+    row["totals"]["cost_usd"] = None
+    row["totals"]["cost_notes"].append("all stages measured zero tokens — implausible for LLM work, cost unavailable")
 if len(variants) > 1:
     row["totals"]["cost_notes"].append("MIXED charter variants mid-issue: %s" % ", ".join(sorted(variants)))
 print(json.dumps(row, sort_keys=True))

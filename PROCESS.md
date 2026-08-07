@@ -201,6 +201,68 @@ me in the loop (the pipeline's approval gates are mine by design): merge fdc +
 lando-agent branches, fan out the vendor re-pin to the 8 agent repos, merge +
 release kyber#23, then the scratch-issue E2E run and the two experiment arms.
 
+## Session 2 — "review, fix, and then merge the 3 branches"
+
+My prompt: exactly that, one line. Claude ran three independent adversarial
+reviews in parallel — two custom review agents on the private-repo branches and
+the code-review tooling on kyber#23 (whose first run targeted the wrong branch
+and had to be redone — noted honestly: the tool reviewed the checked-out docs
+branch instead of the PR).
+
+This round is the strongest evidence in this whole exercise for the "don't
+accept the first thing the AI gives you" principle — **the AI's reviewers tore
+real holes in the AI's implementation**, and every hole was verified before
+being fixed (several were reproduced with actual commands, not just argued):
+
+**falcon-dev-common (8 findings, all fixed, +12 regression tests):**
+1. The vendored rate table was stale — zero `cache_creation` lines, so the
+   ledger would have silently excluded ~half of real Claude Code spend while
+   labeling totals `priced: true`. (Fixed from kyber's regenerated feed. The
+   irony is noted: the cost-tracking branch shipped with the exact class of
+   silent understatement it was built to eliminate.)
+2. Resumed sessions could FABRICATE spend: dedup attributed replayed history to
+   whichever file sorted first lexically, so a `--resume` could inject
+   pre-baseline tokens into a "lower_bound" report. Reproduced, then fixed with
+   oldest-mtime-first attribution + a regression test.
+3. `gh api --paginate` emits one JSON array per page — a single `json.loads`
+   would choke past 100 comments and silently drop every usage marker on a
+   busy issue. The tests' gh stub had masked it. Fixed with a raw_decode loop.
+4. The fenced-fallback baseline marker was unrecoverable after a pod recycle
+   (recovery only knew the one-line form).
+5. The baseline blob rode inside the load-bearing `falcon:pickup` comment and
+   grew without bound — past GitHub's 64KB body limit it would have taken
+   stall-recovery down with it. Now: pruned + posted as its own comment.
+6. Skill-doc bash blocks defined a variable in one block and consumed it two
+   blocks later — but shell state doesn't persist between an agent's separate
+   tool calls, so the usage marker would silently vanish. (A very AI-specific
+   bug: instructions that are correct prose but wrong as executed reality.)
+7. An empty/misconfigured transcript dir yielded a confident "exact 0 tokens" →
+   a $0.00 ledger row, the one number the charter bans. Now `unavailable`.
+8. The metrics cross-check summed kyber's `priced:false` placeholder zeros
+   without labeling them.
+
+**lando-agent (4 findings, 3 fixed, 1 resolved by merge ordering):** the
+vendored scripts don't exist at the current vendor pin (merge-ordering gate —
+resolved by fdc's auto fan-out workflow); PR numbers were sourced from a
+pipeline field the repo's own docs call usually-unwritten, which would silently
+drop review/deploy-stage tokens (fixed properly in `issue-cost.sh`: linked PRs
+are now auto-discovered from the issue timeline); the eval card block broke on
+apostrophes and null counts (now shlex-quoted + coerced, exercised against
+adversarial rows); a charter-variant format ambiguity.
+
+**kyber#23 (10 findings, 8 CONFIRMED):** the harshest and best. The top four
+showed my approved per-message output design was structurally lossy: only the
+last message per 30s reporter tick was counted (busy agents lose most output),
+the dedup tuple depended on a 5-minute-TTL cache (double-counts after any gap),
+negative values weren't clamped on one accumulator path, and identical-usage
+messages collided to a false zero. The reviewers' shared root fix — make output
+CUMULATIVE (reporter-side accumulation for Claude; Codex already exposes a
+cumulative counter) so it flows through the existing safeDelta path and the
+tuple heuristic disappears — is simply a better design than the one I approved
+in planning. Rework dispatched to the implementation agent; two cleanup
+findings (Redis pipelining, token-type SSOT refactor) deliberately deferred as
+follow-ups rather than scope-creeping the PR.
+
 ---
 
 ## Appendix A — the assignment (verbatim)

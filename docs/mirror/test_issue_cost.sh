@@ -136,6 +136,56 @@ R="$("${SUT}" matty-v/snapdex#46 --metrics-json "${SBX}/metrics.json")"
 [[ "$(echo "$R" | jqget metrics_check.window_cost_usd)" == "3.1" ]] && pass "cross-check sums contributors only" || fail "xcheck sum: $R"
 echo "$R" | grep -q "excludes output tokens" && pass "output-gap labeled" || fail "xcheck label: $R"
 
+# --- timeline auto-discovery + paginated (concatenated) comment arrays ------
+python3 - "$SBX" \
+  "$(usage_marker han s claude-sonnet-4-5 1000000 0 0 0 exact)" \
+  "$(usage_marker chewie merge-requested claude-sonnet-4-5 500000 0 0 0 exact)" <<'PYEOF'
+import json, os, sys
+sbx, han, chewie = sys.argv[1:4]
+g = lambda name, s: open(os.path.join(sbx, "gh", name), "w").write(s)
+# Issue comments arrive as TWO concatenated pages (gh --paginate emits one
+# array per page) — the han marker is in page 2.
+g("repos_matty-v_snapdex_issues_47_comments.json",
+  json.dumps([{"body": "noise"}]) + json.dumps([{"body": han}]))
+g("repos_matty-v_snapdex_issues_47.json", json.dumps({"title": "t", "body": ""}))
+# Timeline cross-references PR 88 (same repo) and an out-of-repo PR (ignored).
+g("repos_matty-v_snapdex_issues_47_timeline.json", json.dumps([
+  {"event": "cross-referenced", "source": {"issue": {"number": 88, "pull_request": {},
+     "repository": {"full_name": "matty-v/snapdex"}}}},
+  {"event": "cross-referenced", "source": {"issue": {"number": 999, "pull_request": {},
+     "repository": {"full_name": "matty-v/other"}}}},
+  {"event": "labeled"}]))
+g("repos_matty-v_snapdex_issues_88_comments.json", json.dumps([{"body": chewie}]))
+PYEOF
+R="$("${SUT}" matty-v/snapdex#47)"   # note: NO --pr args — discovery must find 88
+[[ "$(echo "$R" | jqget totals.tokens.input)" == "1500000" ]] && pass "paginated pages + discovered PR both counted" || fail "discovery: $R"
+S="$(echo "$R" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["stages"]))')"
+[[ "$S" == "2" ]] && pass "PR 88 auto-discovered from timeline (2 stages)" || fail "stages: $R"
+
+# --- all-zero stages → priced=false, never a confident \$0.00 ----------------
+python3 - "$SBX" "$(usage_marker han s claude-sonnet-4-5 0 0 0 0 exact)" <<'PYEOF'
+import json, os, sys
+sbx, m = sys.argv[1:3]
+json.dump([{"body": m}], open(os.path.join(sbx, "gh", "repos_matty-v_snapdex_issues_48_comments.json"), "w"))
+json.dump({"title": "t", "body": ""}, open(os.path.join(sbx, "gh", "repos_matty-v_snapdex_issues_48.json"), "w"))
+PYEOF
+R="$("${SUT}" matty-v/snapdex#48)"
+[[ "$(echo "$R" | jqget totals.priced)" == "False" ]] && pass "all-zero stages → priced=false" || fail "zero: $R"
+echo "$R" | grep -q "implausible for LLM work" && pass "zero-total reason named" || fail "zero reason: $R"
+
+# --- cross-check labels unpriced metrics rows -------------------------------
+cat > "${SBX}/metrics2.json" <<'EOF'
+[{"agent":"han","model":"claude-mystery","tokens":{"input":10},"costUsd":0,"priced":false}]
+EOF
+python3 - "$SBX" "$(usage_marker han s claude-sonnet-4-5 1000 100 0 0 exact)" <<'PYEOF'
+import json, os, sys
+sbx, m = sys.argv[1:3]
+json.dump([{"body": m}], open(os.path.join(sbx, "gh", "repos_matty-v_snapdex_issues_49_comments.json"), "w"))
+json.dump({"title": "t", "body": ""}, open(os.path.join(sbx, "gh", "repos_matty-v_snapdex_issues_49.json"), "w"))
+PYEOF
+R="$("${SUT}" matty-v/snapdex#49 --metrics-json "${SBX}/metrics2.json")"
+echo "$R" | grep -q "excludes unpriced rows: claude-mystery" && pass "unpriced metrics rows labeled" || fail "unpriced label: $R"
+
 echo
 echo "issue-cost: ${PASS} passed, ${FAIL} failed"
 [[ "${FAIL}" -eq 0 ]]

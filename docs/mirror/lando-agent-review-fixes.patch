@@ -1,0 +1,71 @@
+commit 8eaa1dc49f948734683cefd00f1be19ec998cbd6
+Author: Matt Voget <matt.voget@gmail.com>
+Date:   Fri Aug 7 13:35:51 2026 -0600
+
+    fix(cost): review fixes — shlex-quoted card derivation, sha7 charter-variant format
+    
+    Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+
+diff --git a/skills/process-github-event.md b/skills/process-github-event.md
+index 632ce75b..822fd407 100644
+--- a/skills/process-github-event.md
++++ b/skills/process-github-event.md
+@@ -110,7 +110,7 @@ twins, machine then human:
+ 1. **Issue-body marker.** Append one line to the issue body (same `--body-file -` edit idiom as
+    the `<!-- discord-thread: <id> -->` marker; use `hooks/gh-issue.sh`):
+ 
+-   `<!-- falcon:charter:v1 {"v":1,"issue":"<owner>/<repo>#<n>","kickoff_at":"<now iso8601>","planned":[…],"charter_variant":"<from token-usage.sh's variant — or vendor VARIANT@pin>"} -->`
++   `<!-- falcon:charter:v1 {"v":1,"issue":"<owner>/<repo>#<n>","kickoff_at":"<now iso8601>","planned":[…],"charter_variant":"<vendor/falcon-dev-common/VARIANT content>@<FIRST 7 chars of vendor/falcon-dev-common-version>", e.g. "full@9c63b54" — the same name@sha7 format the workers stamp} -->`
+ 
+    `planned` lists the crew you expect to dispatch for this issue class — agent, role, and model
+    read from `vendor/falcon-dev-common/config/team-roster.yaml` (planned ≠ actual: workers'
+diff --git a/skills/process-worker-ack.md b/skills/process-worker-ack.md
+index d6a174f2..a03dfe94 100644
+--- a/skills/process-worker-ack.md
++++ b/skills/process-worker-ack.md
+@@ -802,26 +802,34 @@ COST_LINE="unavailable (no usage reports found)"
+ TOKEN_LINE=""; XCHECK_LINE=""
+ if [ -n "$LEDGER_ROW" ]; then
+   eval "$(printf '%s' "$LEDGER_ROW" | python3 -c "
+-import json, sys
++import json, shlex, sys
++# All three lines are emitted via shlex.quote so an apostrophe (or anything
++# else) in a marker-sourced value can never break the eval; malformed counts
++# coerce to 0 (the ledger row is marker-sourced and CONTRACTS §10.2 warns
++# markers can be malformed — the card must degrade, not vanish).
++def emit(name, val):
++    print(name + '=' + shlex.quote(val))
++def n(v):
++    try: return int(v or 0)
++    except (TypeError, ValueError): return 0
+ row = json.load(sys.stdin)
+ t = row['totals']
+ if t['priced']:
+-    print(f\"COST_LINE='\${t['cost_usd']:.2f} est.'\")
++    emit('COST_LINE', f\"\${t['cost_usd']:.2f} est.\")
+ else:
+-    print(\"COST_LINE='partial — see issue comments'\")
+-tok = t['tokens']; total = sum(tok.values())
+-def h(n): return f'{n/1e6:.1f}M' if n >= 1e6 else f'{n//1000}k'
++    emit('COST_LINE', 'partial — see issue comments')
++total = sum(n(v) for v in t['tokens'].values())
++def h(x): return f'{x/1e6:.1f}M' if x >= 1e6 else f'{x//1000}k'
+ per = {}
+ for s in row['stages']:
+-    for m, c in s['models'].items():
+-        per[s['stage']] = per.get(s['stage'], 0) + sum(v for k, v in c.items() if k != 'api_calls')
++    for m, c in (s.get('models') or {}).items():
++        per[s['stage']] = per.get(s['stage'], 0) + sum(n(v) for k, v in c.items() if k != 'api_calls')
+ split = ' · '.join(f'{k.replace(\"needs-\",\"\").replace(\"ready-for-\",\"\")} {h(v)}' for k, v in sorted(per.items(), key=lambda x: -x[1]))
+-print(f\"TOKEN_LINE='• 📊 {h(total)} tokens — {split}'\")
++emit('TOKEN_LINE', f'• 📊 {h(total)} tokens — {split}')
+ mc = row.get('metrics_check')
+ if mc and t['priced'] and t['cost_usd'] is not None:
+-    gap = [n for n in mc['notes'] if 'output' in n]
+-    if gap:
+-        print(f\"XCHECK_LINE='• ⚠️ platform metric reads \${mc['window_cost_usd']:.2f} — known gap: it does not count output tokens'\")
++    if any('output' in x for x in mc['notes']):
++        emit('XCHECK_LINE', f\"• ⚠️ platform metric reads \${mc['window_cost_usd']:.2f} — known gap: it does not count output tokens\")
+ " 2>/dev/null || true)"
+ fi
+ ```

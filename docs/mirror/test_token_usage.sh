@@ -95,6 +95,61 @@ R="$("${SUT}" report env-nope --stage s --issue matty-v/snapdex#42)"
 [[ "$(echo "$R" | jqget quality)" == "unavailable" ]] && pass "missing baseline → unavailable" || fail "missing baseline: $R"
 echo "$R" | grep -q '"models": {}' || echo "$R" | grep -q '"models":{}' && pass "no fabricated counts" || fail "fabricated: $R"
 
+# --- 6b. resumed session replaying history must not fabricate spend ---------
+# A --resume writes a NEW file replaying old message ids. Oldest-mtime-first
+# scanning keeps replayed entries attributed to the original file, so the
+# report sees only genuinely-new messages (lexical order would attribute the
+# replay to the new file ~half the time and count pre-baseline history).
+make_sandbox
+line claude-sonnet-4-5 100 10 5000000 200 standard m1 > "${CLAUDE_PROJECTS_DIR}/slug-a/z-old-session.jsonl"
+touch -t 202608070900 "${CLAUDE_PROJECTS_DIR}/slug-a/z-old-session.jsonl"
+"${SUT}" baseline env-resume >/dev/null
+{ line claude-sonnet-4-5 100 10 5000000 200 standard m1;   # replayed history
+  line claude-sonnet-4-5 7 3 0 0 standard m-new; } > "${CLAUDE_PROJECTS_DIR}/slug-a/a-resumed.jsonl"
+touch -t 202608071000 "${CLAUDE_PROJECTS_DIR}/slug-a/a-resumed.jsonl"
+R="$("${SUT}" report env-resume --stage s --issue matty-v/snapdex#42)"
+[[ "$(echo "$R" | jqget models.claude-sonnet-4-5.input)" == "7" ]] && pass "resume replay not double-counted" || fail "resume: $R"
+[[ "$(echo "$R" | jqget quality)" == "exact" ]] && pass "resume is not a discontinuity" || fail "resume quality: $R"
+
+# --- 6c. empty projects tree → unavailable, never exact-zero ----------------
+make_sandbox
+"${SUT}" baseline env-empty >/dev/null
+R="$("${SUT}" report env-empty --stage s --issue matty-v/snapdex#42)"
+[[ "$(echo "$R" | jqget quality)" == "unavailable" ]] && pass "empty tree → unavailable" || fail "empty tree: $R"
+echo "$R" | grep -q "projects dir empty or misconfigured" && pass "empty-tree reason named" || fail "empty reason: $R"
+
+# --- 6d. baseline prunes zero-usage files (comment-size bound) --------------
+make_sandbox
+line claude-sonnet-4-5 10 1 0 0 standard m1 > "${T1}"
+printf '{"type":"user","uuid":"u1"}\n' > "${CLAUDE_PROJECTS_DIR}/slug-a/no-usage.jsonl"
+B="$("${SUT}" baseline env-prune)"
+echo "$B" | grep -q "no-usage.jsonl" && fail "zero-usage file not pruned" || pass "zero-usage file pruned from baseline"
+
+# --- 6e. baseline recovery: fenced form + paginated (concatenated) arrays ---
+make_sandbox
+mkdir -p "${SBX}/ghstub"
+line claude-sonnet-4-5 100 10 1000 200 standard m1 > "${T1}"
+B_JSON="$("${SUT}" baseline env-rec)"
+rm -rf "${FALCON_RUNTIME_DIR}"           # simulate pod recycle
+{ line claude-sonnet-4-5 100 10 1000 200 standard m1; line claude-sonnet-4-5 40 4 400 40 standard m2; } > "${T1}"
+# Stub gh-issue.sh: serve TWO concatenated arrays (gh --paginate page-per-array),
+# with the baseline in the SECOND page wrapped in the FENCED form.
+STUB="${SBX}/ghstub/gh-issue.sh"
+cat > "${STUB}" <<STUBEOF
+#!/usr/bin/env bash
+cat "${SBX}/ghstub/pages.txt"
+STUBEOF
+python3 - "${SBX}/ghstub/pages.txt" "$B_JSON" <<'PYEOF'
+import json, sys
+fenced = "<!-- falcon:usage-baseline:v1 -->\n```json\n" + sys.argv[2] + "\n```"
+open(sys.argv[1], "w").write(json.dumps([{"body": "noise"}]) + json.dumps([{"body": fenced}]))
+PYEOF
+chmod +x "${STUB}"
+# Point the script's gh wrapper at the stub by shadowing hooks/gh-issue.sh via PATH-free env:
+R="$(FALCON_GH_ISSUE_OVERRIDE="${STUB}" "${SUT}" report env-rec --stage s --issue matty-v/snapdex#42)"
+[[ "$(echo "$R" | jqget quality)" == "exact" ]] && pass "fenced+paginated baseline recovered" || fail "recovery: $R"
+[[ "$(echo "$R" | jqget models.claude-sonnet-4-5.input)" == "40" ]] && pass "recovered delta correct" || fail "recovered delta: $R"
+
 # --- 7. marker forms --------------------------------------------------------
 make_sandbox
 line claude-sonnet-4-5 10 1 0 0 standard m1 > "${T1}"

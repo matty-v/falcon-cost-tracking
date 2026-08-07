@@ -73,7 +73,20 @@ root = sys.argv[1]
 ZERO = lambda: {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0, "api_calls": 0}
 files, totals, seen = {}, {}, set()
 
-for path in sorted(glob.glob(os.path.join(root, "*", "*.jsonl"))):
+def mtime(p):
+    try:
+        return os.path.getmtime(p)
+    except OSError:
+        return 0.0
+
+# Scan OLDEST-mtime first (path as tiebreak): a resumed/continued session
+# writes a NEW file replaying prior history under the SAME message ids, and
+# dedup attributes an id to whichever file is scanned first. Oldest-first keeps
+# replayed entries attributed to their original file, so at report time the old
+# file's counts never "shrink" (no false discontinuity) and the new file
+# contributes only genuinely new messages — lexical order would attribute
+# pre-baseline history to the new file ~half the time and fabricate spend.
+for path in sorted(glob.glob(os.path.join(root, "*", "*.jsonl")), key=lambda p: (mtime(p), p)):
     per = {}
     try:
         with open(path, encoding="utf-8", errors="replace") as f:
@@ -140,8 +153,12 @@ cmd_baseline() {
   json="$(SCAN_JSON="${scan}" python3 - "$envelope" "$taken" <<'PYEOF'
 import json, os, sys
 scan = json.loads(os.environ["SCAN_JSON"])
+# Prune zero-usage files: the baseline rides inside a GitHub comment, so it must
+# stay bounded. A file absent from the baseline counts IN FULL at report time,
+# which is exactly right for a file that had no finalized usage at baseline.
+files = {p: f for p, f in scan["files"].items() if f.get("models")}
 print(json.dumps({"v": 1, "envelope_id": sys.argv[1], "taken_at": sys.argv[2],
-                  "files": scan["files"], "totals": scan["totals"]}, sort_keys=True))
+                  "files": files, "totals": scan["totals"]}, sort_keys=True))
 PYEOF
 )"
   printf '%s\n' "${json}" > "${file}"
@@ -149,31 +166,53 @@ PYEOF
 }
 
 # recover_baseline <envelope> <owner/repo#N> — pull the baseline marker back out
-# of the issue's pickup comment. Prints baseline JSON or nothing.
+# of its comment on the issue/PR. Prints baseline JSON or nothing.
+# FALCON_GH_ISSUE_OVERRIDE points tests at a stub wrapper.
 recover_baseline() {
   local envelope="$1" issue="$2"
   local repo="${issue%#*}" num="${issue##*#}"
+  local gh_wrapper="${FALCON_GH_ISSUE_OVERRIDE:-${SCRIPT_ROOT}/hooks/gh-issue.sh}"
   local comments
-  comments="$("${SCRIPT_ROOT}/hooks/gh-issue.sh" api "repos/${repo}/issues/${num}/comments" --paginate 2>/dev/null || true)"
+  comments="$("${gh_wrapper}" api "repos/${repo}/issues/${num}/comments" --paginate 2>/dev/null || true)"
   [[ -z "${comments}" ]] && return 0
   COMMENTS_JSON="${comments}" python3 - "$envelope" <<'PYEOF'
 import json, os, re, sys
 
 envelope = sys.argv[1]
-try:
-    comments = json.loads(os.environ["COMMENTS_JSON"])
-except ValueError:
-    sys.exit(0)
-pat = re.compile(r"<!-- falcon:usage-baseline:v1 (\{.*?\}) -->", re.S)
-for c in comments if isinstance(comments, list) else []:
-    for m in pat.finditer(c.get("body") or ""):
+
+# `gh api --paginate` emits ONE JSON ARRAY PER PAGE, concatenated — a single
+# json.loads chokes past 100 comments. Decode document-by-document and flatten.
+def decode_pages(text):
+    dec, idx, out = json.JSONDecoder(), 0, []
+    text = text.strip()
+    while idx < len(text):
         try:
-            b = json.loads(m.group(1))
+            doc, end = dec.raw_decode(text, idx)
         except ValueError:
-            continue
-        if b.get("envelope_id") == envelope:
-            print(json.dumps(b, sort_keys=True))
-            sys.exit(0)
+            break
+        out.extend(doc if isinstance(doc, list) else [doc])
+        idx = end
+        while idx < len(text) and text[idx] in " \t\r\n":
+            idx += 1
+    return out
+
+comments = decode_pages(os.environ["COMMENTS_JSON"])
+# Both marker forms: the one-liner AND the fenced fallback wrap_marker emits
+# when the JSON contains "--" (transcript-path slugs genuinely produce that).
+pats = (re.compile(r"<!-- falcon:usage-baseline:v1 (\{.*?\}) -->", re.S),
+        re.compile(r"<!-- falcon:usage-baseline:v1 -->\s*```json\s*(\{.*?\})\s*```", re.S))
+for c in comments:
+    if not isinstance(c, dict):
+        continue
+    for pat in pats:
+        for m in pat.finditer(c.get("body") or ""):
+            try:
+                b = json.loads(m.group(1))
+            except ValueError:
+                continue
+            if b.get("envelope_id") == envelope:
+                print(json.dumps(b, sort_keys=True))
+                sys.exit(0)
 PYEOF
 }
 
@@ -212,6 +251,14 @@ raw = os.environ.get("BASELINE_JSON") or ""
 out = {"v": 1, "agent": agent, "envelope_id": envelope, "stage_label": stage,
        "issue": issue, "window": {"from": None, "to": now}, "models": {},
        "charter_variant": variant, "quality": "exact", "reason": None}
+
+# A completely empty scan means the projects dir is empty or misconfigured —
+# an LLM agent that did any work HAS transcript usage. "exact 0" here would
+# flow downstream as a confident $0.00, the one number CONTRACTS §10 bans.
+if not scan["totals"]:
+    out["quality"], out["reason"] = "unavailable", "no transcript activity measured — projects dir empty or misconfigured"
+    print(json.dumps(out, sort_keys=True))
+    sys.exit(0)
 
 if not raw.strip():
     out["quality"], out["reason"] = "unavailable", "no baseline (pod recycled before pickup comment landed)"
