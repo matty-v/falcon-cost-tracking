@@ -368,8 +368,10 @@ cache reads at a 10×-cheaper rate, so the stage costs ~$2.60 at opus-5 rates
 precisely why the pipeline tracks four token types instead of one number, and
 why kyber's last-message sampling (context semantics) can never be the spend
 source. My misread is itself a UX finding: the Discord 📊 bullet's raw token
-count reads scarier than the money it represents — a format tweak (cache-read
-share, or est. $) is on the table for after the baseline arm.
+count reads scarier than the money it represents — a format tweak was agreed and shipped
+same-session (fdc#121): the bullet now carries the cache-read share —
+`• 📊 ~10.4M tokens (~87% cache reads) · sonnet` — fixing the misread without
+moving pricing into workers' hands (Lando still owns the $).
 
 Meanwhile the run itself validated the multi-segment design unprompted: the
 second usage report is Yoda AGAIN (`approval-verdict`, 1.41M tokens, 8 calls)
