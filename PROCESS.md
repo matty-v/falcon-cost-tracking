@@ -263,6 +263,31 @@ in planning. Rework dispatched to the implementation agent; two cleanup
 findings (Redis pipelining, token-type SSOT refactor) deliberately deferred as
 follow-ups rather than scope-creeping the PR.
 
+**The rework and the merges.** The implementation agent rebuilt output
+accounting as cumulative: a new `outputTracker` in the reporter (per-file byte
+offsets so nothing scrolls out of the tail window, rotation draining, bounded
+FIFO dedup, init-at-EOF so a restart can never double-count — the restart gap
+undercounts, which is the honest direction), Codex switched to its native
+cumulative `total_token_usage`, and the tuple heuristic was deleted in favor of
+the same `safeDelta` path the other three token types use (negative clamp for
+free). New tests ran under `-race -count=3`; the multi-message-per-tick
+undercount got a named regression test. I reviewed the tracker and delta hunks
+directly before pushing.
+
+Merged, in dependency order:
+1. **kyber#23** (squash → `9b1a3d5`) after CI went green.
+2. **falcon-dev-common#118** (→ `2698293`), which auto-triggered the vendor
+   fan-out workflow — vendor-bump PRs opened in all 8 agent identity repos and
+   auto-merged, so the whole fleet is pinned to the cost-tracking contract.
+   (A momentary scare here: my first check found no vendor PR — I had simply
+   raced the workflow by seconds. Logged because "verify, don't assume" cuts
+   both ways.)
+3. **lando-agent#106** (vendor bump) then **#105** (mini-charter + ledger).
+
+Still ahead of the live E2E: a kyber release so the deployed control plane
+actually serves output-token costs (CI never deploys; ArgoCD does), and pod
+session restarts so running agents pick up the re-linked skills.
+
 ---
 
 ## Appendix A — the assignment (verbatim)
