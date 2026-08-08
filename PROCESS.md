@@ -478,6 +478,21 @@ structurally low.
 
 ---
 
+### Session 3 — 2026-08-08 — baseline arm begins; prose loses to scripts, again
+
+The baseline arm opened with snapdex#997 (grouped admin nav — comparable PWA
+work to #995). Two stage reports landed cleanly — but the mini-charter never
+appeared, even though the dispatch backstop (lando#111) was in Lando's tree:
+**the prose procedure was skipped on two consecutive dispatches**, while every
+script invocation in the pipeline has been followed 8/8. That settles the
+pattern this project keeps re-learning: instructions that ARE a command get
+executed; instructions that DESCRIBE a procedure get improvised away. Fix
+(lando-agent#114): `charter-ensure.sh` — idempotent, open-if-missing,
+never-blocking, dry-run-verified against the live issue — and both Lando
+skills now just run it. Placed in lando-agent rather than falcon-dev-common
+deliberately: the worker vendor bundle stays frozen mid-experiment, so the
+arm's variant tags stay clean.
+
 ## Appendix A — the assignment (verbatim)
 
 > **Technical Engineering Manager: Take-Home Assessment**
