@@ -379,6 +379,42 @@ after his triage segment — same agent, two envelopes, two kept reports, which
 is exactly the kickback-accounting scenario I'd described as a requirement
 before we confirmed the design.
 
+### Session 2, continued — the E2E completes, and catches its best bug at the finish line
+
+snapdex#995 ran the full pipeline: 8 stage segments, ALL quality `exact`, all
+claude-opus-5 — Yoda×3 (triage 3.10M / approval-verdict 1.41M / challenge
+3.22M), Obi-wan architecture 4.86M, Ackbar deploy-review 2.54M, Han build
+7.57M, Chewie review 10.17M (the review cost MORE than the build — invisible
+until today) and smoke-test 4.20M. ~37M tokens, 98% cache reads. PR-keyed
+segments landed on PR#996 as designed. The pre-build "thinking" stages alone
+were ~$12 — exactly the overhead the charter-size experiment targets.
+
+Then the finish line: **issue closed, no ledger row.** Lando's Step 6b close-out
+was skipped when the smoke-test green-light collided with Matt's prod-promotion
+HOLD and the global work freeze — Lando detoured into hold-handling, and the
+accounting never ran. Diagnosis was clean because the monitor asserted the
+ledger row explicitly instead of assuming close == done.
+
+Two responses, both same-session:
+1. **Verified the math independently**: ran `issue-cost.sh` locally (read-only)
+   against the live markers — it found all 8 segments including both PR-side
+   reports via timeline auto-discovery (no --pr hints), priced the issue at
+   **$28.19**, and honestly flagged that the charter variant rolled THREE times
+   mid-issue (the fleet's vendor bumps were landing while the issue was in
+   flight). The aggregator is correct; only the trigger failed.
+2. **Closed the gap structurally** (fdc#122): a deterministic
+   `ledger-reconciler.sh` riding the existing 15-min cron — invoked BEFORE the
+   summary reconciler's Discord guard, because the ledger must not depend on
+   Discord — idempotently writing any missing row for recently-closed issues
+   with usage markers. An LLM orchestrator can detour; a cron script cannot.
+   That asymmetry is the design lesson of the day, and it rhymes with the
+   earlier choice to put aggregation in a tested script instead of skill prose.
+
+Also still open from the run: no Discord thread/charter markers appeared on
+the issue at all — the Discord mirror itself looks unprovisioned/broken in the
+restarted pods (non-blocking by design, so the GitHub record stayed complete).
+To chase before the baseline arm.
+
 ### Session 2, continued — design confirmation: self-reports are the truth
 
 I described my mental model back as a test: an agent that goes through a
