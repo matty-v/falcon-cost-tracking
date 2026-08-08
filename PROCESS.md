@@ -450,6 +450,14 @@ was readable. The running theme of this whole phase: every failure mode the
 truthfulness ladder was designed for actually happened within hours of going
 live — and each one produced an honest artifact instead of a wrong number.
 
+**E2E COMPLETE**: after the supersede fix propagated and Lando re-ran the
+reconciler, the row healed itself — `#995 ROW NOW PRICED: $28.19`, exactly
+matching my independent local aggregation. The full chain is proven live:
+worker transcript self-reports → GitHub comment markers → PR auto-discovery →
+priced aggregation → durable ledger, with a cron backstop that retries,
+supersedes, and self-diagnoses. Phase 3's scratch-issue objective is done;
+next is the ~3-issue baseline arm.
+
 ### Session 2, continued — design confirmation: self-reports are the truth
 
 I described my mental model back as a test: an agent that goes through a
