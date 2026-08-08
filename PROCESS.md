@@ -435,6 +435,21 @@ pattern existed in token-usage.sh's recovery and scan paths), and backstop
 warnings print to stdout because a warning nobody can see is not a warning.
 55 tests green including a 300KB-timeline E2BIG regression case.
 
+### Session 2, continued — the first ledger row lands (and heals)
+
+After the E2BIG fix propagated and Matt had Lando sync + rerun, the monitor
+fired: **the first row of cost-ledger.jsonl exists** — snapdex#995, all 8
+stages, 37M tokens. But unpriced: `model claude-opus-5 has no rate` and
+`rates_provenance: unknown@unknown` — the rates file wasn't readable in
+Lando's pod, cause TBD (locally the same aggregation prices $28.19). That
+exposed one more design flaw worth its own entry: the backstop was
+append-once, so an unpriced row could never heal. fdc#124 makes priced rows
+final while unpriced rows retry and supersede in place (git history keeps
+the original), and unpriced appends now self-diagnose whether the rates file
+was readable. The running theme of this whole phase: every failure mode the
+truthfulness ladder was designed for actually happened within hours of going
+live — and each one produced an honest artifact instead of a wrong number.
+
 ### Session 2, continued — design confirmation: self-reports are the truth
 
 I described my mental model back as a test: an agent that goes through a
