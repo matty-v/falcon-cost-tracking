@@ -419,6 +419,22 @@ only — usage reports remain the record of what already happened). Lesson
 logged: I asserted 'Discord broken' from an absent marker; the human's direct
 observation corrected the inference. Verify the surface, not the proxy.
 
+### Session 2, continued — the fleet debugs its own cost tracking (E2BIG)
+
+The best moment of the project: the ledger row still wasn't appearing after
+Lando's restart, and while we were diagnosing from the outside, **Lando
+diagnosed it from the inside and escalated**: "ledger-reconciler dead via
+env-var E2BIG in issue-cost.sh:62, masked by exit 0." The AI dev team found
+the bug in the cost-tracking system the AI assistant built to measure the AI
+dev team. Root cause: I passed the paginated issue timeline to python via an
+environment variable; the kernel caps a single env string at ~128KB and kills
+the exec with E2BIG. And per my own reconciler design — warnings to stderr,
+exit 0 — the failure was invisible to the cron report. Two lessons shipped as
+fdc#123: large payloads travel via temp files everywhere (the same latent
+pattern existed in token-usage.sh's recovery and scan paths), and backstop
+warnings print to stdout because a warning nobody can see is not a warning.
+55 tests green including a 300KB-timeline E2BIG regression case.
+
 ### Session 2, continued — design confirmation: self-reports are the truth
 
 I described my mental model back as a test: an agent that goes through a
