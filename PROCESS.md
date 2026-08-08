@@ -410,10 +410,14 @@ Two responses, both same-session:
    That asymmetry is the design lesson of the day, and it rhymes with the
    earlier choice to put aggregation in a tested script instead of skill prose.
 
-Also still open from the run: no Discord thread/charter markers appeared on
-the issue at all — the Discord mirror itself looks unprovisioned/broken in the
-restarted pods (non-blocking by design, so the GitHub record stayed complete).
-To chase before the baseline arm.
+Correction from Matt watching Discord directly: the thread EXISTED — the
+mirror works; only the charter card was missing (and the body marker my check
+grepped for). So the single confirmed gap was the kickoff-only charter path,
+now closed structurally: lando-agent#111 adds dispatch Step 5c, an
+open-if-missing charter backstop (mid-pipeline entries list remaining stages
+only — usage reports remain the record of what already happened). Lesson
+logged: I asserted 'Discord broken' from an absent marker; the human's direct
+observation corrected the inference. Verify the surface, not the proxy.
 
 ### Session 2, continued — design confirmation: self-reports are the truth
 
