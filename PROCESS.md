@@ -493,6 +493,74 @@ skills now just run it. Placed in lando-agent rather than falcon-dev-common
 deliberately: the worker vendor bundle stays frozen mid-experiment, so the
 arm's variant tags stay clean.
 
+## Trial and error — the whole loop, consolidated (noted for the record at Matt's request)
+
+Every entry above is chronological; this section gathers the trial→error→
+correction cycles in one place, because the iteration IS the deliverable the
+assignment asks about. Nothing here worked on the first try except the worker
+self-reports — and even those were review-hardened first.
+
+**Planning (human overrides AI):**
+1. AI recommended routing the kyber metrics bug through the Falcon team as a
+   meta-demo → overridden: accurate platform metrics are a prerequisite for
+   truthful cost tracking, not a test subject for it.
+2. AI designer wanted n≥6 per experiment arm → held at n=3 for budget; the
+   caveat ships with the results instead of pretending at rigor.
+3. Estimates exceeded the 4–8h guideline → flagged with a trim order rather
+   than hidden.
+
+**Implementation (AI catches AI, pre-merge):** the sanitizer newline bug
+(caught by the AI's own tests), the dangling `$PR_NUMBERS` reference (caught
+in self-review), aggregation moved from skill prose into a tested script, and
+a 22-finding adversarial review round that included a full redesign of the
+already-approved output-token accounting (per-message sampling → cumulative
+tracker), a stale rate table that silently halved costs, resume-replay
+fabrication, `gh --paginate` breakage past 100 comments, and a
+shell-state-per-block bug specific to how LLM agents execute documentation.
+Also honest: the review tooling itself misfired once (reviewed the wrong
+branch) and was rerun.
+
+**Rollout (the platform bites):** the vendor fan-out never moved the pin file
+(every agent's pin lied about its contract — found only because "how do I
+verify X" questions are bug-finders); the fan-out's trigger paths were
+missing `config/**`, so rates refreshes would silently never propagate.
+
+**Live operation (the system debugs itself, 24 hours of it):**
+- claude-opus-5 unpriced → rates refreshed through the sanctioned
+  no-hand-typed-prices pipeline; the roster's planned≠actual detector fired
+  on its first row (fleet upgraded to opus-5; roster still says sonnet —
+  known-stale, deferred to the post-arm window).
+- Matt misread 3.1M tokens as scary (97% cheap cache reads ≈ $2.60) →
+  the chartered Discord bullet now carries the cache-read share.
+- Lando's Step 6b close-out detoured on a promotion-HOLD + freeze collision
+  and the first ledger row was never written → deterministic cron backstop
+  (an LLM orchestrator can detour; a cron script cannot).
+- The backstop then died silently: env-var payload passing hit the kernel's
+  ~128KB E2BIG limit, masked by exit-0 + stderr-only warnings — **diagnosed
+  by Lando itself, from inside the pod** → payloads via files everywhere,
+  warnings to stdout.
+- The healed row appeared UNPRICED (rates unreadable in-pod, first
+  occurrence unexplained) and append-once idempotency made that permanent →
+  unpriced rows now retry and supersede in place; #995 healed to $28.19,
+  matching the independent local computation exactly.
+- The prose mini-charter backstop was skipped on two consecutive dispatches
+  (#997) while script invocations ran 8/8 → charter creation became a
+  script; it fired at first dispatch on #998. Twice now, prose lost to
+  scripts — the single most repeated lesson of this project.
+- #997's row is honestly partial: a mid-stage pod recycle destroyed one
+  baseline (both copies), and the ladder refused to fake the total. Arm
+  hygiene rule added (no recycles mid-issue); a cost-floor field is queued
+  for after the vendor freeze.
+- One wrong AI inference, corrected by the human: "Discord is broken"
+  deduced from an absent body marker, when the thread existed all along —
+  verify the surface, not the proxy.
+
+**The through-line:** every failure produced an honest artifact — an
+`unavailable`, a `partial`, an `unpriced`, a labeled discrepancy — and never
+a plausible wrong number. The fail-loud discipline was the design bet, and
+24 hours of live fire validated it more thoroughly than any test suite could
+have.
+
 ## Appendix A — the assignment (verbatim)
 
 > **Technical Engineering Manager: Take-Home Assessment**
