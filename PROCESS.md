@@ -520,6 +520,36 @@ registered predictions (median → $19–23, tokens ±15%, guardrails flat);
 charter-lite demoted to designed follow-up with its hypothesis preserved.
 A deliberate scope decision under time pressure, recorded as such.
 
+### Session 3, continued — two pushbacks that reshaped the experiment (recorded at Matt's request)
+
+Two consecutive exchanges where my pushback changed the design, both worth
+the record:
+
+1. **"What else could we change — wouldn't models matter more?"** I challenged
+   the charter-size experiment's effect size before running it. Claude laid
+   out a ranked lever table from our own baseline data: model tier (25–45%)
+   dominates charter size (8–12%), is detectable at n≈3 where a 10% effect
+   would drown in the $28–49 issue-size variance, and needs zero vendor
+   changes because every report already records the transcript model. We
+   pivoted the active experiment to model tier; charter-lite kept its
+   registered hypothesis as the designed follow-up.
+
+2. **"Hold on — should ALL 8 really go to sonnet?"** I pushed back again on
+   the uniform downgrade. The revised design places the premium model by
+   role: opus-5 stays at the two error-amplification points — Obi-wan's
+   architecture (cheap stage, expensive errors: ~$1.20/issue premium as
+   insurance) and Chewie's review gate (~$3/issue, protecting the newly
+   cheaper builders) — with the other six on sonnet-4-5. Registered
+   prediction: median ≈ $25–27 (~24% cut), tokens ±15%, guardrails flat
+   BECAUSE the gates kept opus; deliberately ~$6/issue above the all-sonnet
+   floor. Claude flagged the honest interpretation cost: a mixed fleet
+   answers "how much premium can be shed safely," not a clean
+   single-variable question — muddier science, better operations.
+
+The pattern across both: the AI proposes with arithmetic, the human redirects
+with judgment about risk placement, and the doc registers predictions before
+data arrives so hindsight can't rewrite them.
+
 ## Trial and error — the whole loop, consolidated (noted for the record at Matt's request)
 
 Every entry above is chronological; this section gathers the trial→error→

@@ -39,37 +39,48 @@ Build + review dominate; the five pre-build "thinking" stages sum to ~14M
 tokens/issue. The whole bill is ~97% cache reads — the cheap token type —
 which shapes which levers matter (see ranking below).
 
-## ACTIVE experiment — model tier (arm 2: fleet on `claude-sonnet-4-5`)
+## ACTIVE experiment — model tier (arm 2: MIXED fleet, quality-gates-keep-opus)
 
-**Variable:** the model each agent runs. Baseline arm ran all `claude-opus-5`
-(rates 5 / 25 / 0.5 / 6.25 per MTok in/out/cache-read/cache-write); arm 2
-flips the fleet to `claude-sonnet-4-5` (3 / 15 / 0.3 / 3.75) — a uniform 40%
-rate reduction on every token type. Everything else holds: same repo, same
-issue class, same pipeline, same gates, same charter (`full` variant).
+**Variable:** the model each agent runs — placed by role, not uniformly.
+Matt pushed back on the all-sonnet design: uniform downgrade maximizes savings
+but not savings-per-unit-of-risk. The arm keeps `claude-opus-5` at the two
+error-amplification points and runs `claude-sonnet-4-5` everywhere else:
 
-**Why this variable first:** effect size vs. noise. The baseline's issue-size
-variance is large ($28–49 at n=4); a ~10% context-trim effect can drown in
-it, but a 40% rate shift cannot. It is also the cheapest arm to run — arm
-membership needs NO vendor changes: every usage report already records the
-actual transcript model, so the ledger sorts itself. And the fleet ran
-sonnet-4-5 for months before the opus upgrade, so the quality prior is real;
-this arm quantifies what the upgrade actually costs per issue.
+| agent | role | arm-2 model | rationale |
+|---|---|---|---|
+| obi-wan | architecture | **opus-5** | cheap stage (3.8M), expensive errors — ~$1.20/issue premium is the cheapest insurance in the system |
+| chewie | review + smoke | **opus-5** | the last gate before merge, protecting the cheaper builders; ~$3/issue premium |
+| han / luke | builders | sonnet-4-5 | biggest stage (14.5M) → biggest savings; defects are what the opus reviewer exists to catch |
+| yoda | triage/challenge/verdict | sonnet-4-5 | rubric-driven classification; months of sonnet history |
+| ackbar | deploy | sonnet-4-5 | checklist + verification work; risky ops gated by Matt |
+| boba-fett | QA (off-pipeline) | sonnet-4-5 | findings re-verified on pipeline entry |
+| lando | orchestrator | sonnet-4-5 | contract-following; hard calls escalate to Matt; his always-on background cost isn't even in the per-issue ledger — pure extra savings |
+
+Rates: opus 5 / 25 / 0.5 / 6.25 per MTok vs sonnet 3 / 15 / 0.3 / 3.75 — a
+uniform 40% reduction wherever sonnet runs. Opus is retained on ~41% of
+baseline issue-tokens (architecture + review/smoke).
 
 **Registered predictions (written before arm 2 runs):**
-1. **Cost/issue: median drops ~40% to $19–23** (pure rate arithmetic on
-   unchanged token volumes, with slack for behavioral drift).
-2. **Tokens/issue: roughly unchanged (±15%)** — if sonnet needs materially
-   more calls/turns to do the same work, the token count rises and eats into
-   the rate savings; that delta IS the efficiency gap between the tiers.
-3. **Guardrails must hold: kickbacks, `merge: no` rates, and gate failures
-   flat vs. baseline.** If quality degrades, the honest conclusion is "opus
-   earns its premium," priced precisely — equally valuable.
+1. **Cost/issue: median ≈ $25–27 (~24% below the $33.86 baseline)** — rate
+   arithmetic over the mixed placement; deliberately ~$6/issue above the
+   all-sonnet floor to keep opus at both judgment gates.
+2. **Tokens/issue roughly unchanged (±15%)**; a sonnet-builder needing more
+   turns shows up as stage-token growth and IS the measured tier gap.
+3. **Guardrails flat (kickbacks, `merge: no`, gate failures)** — the design
+   bet is that they hold BECAUSE the gates kept opus. If they hold, the
+   follow-up arm drops Chewie to sonnet to test whether the review gate
+   actually needed the premium.
+4. Per-model attribution comes free (every report records the transcript
+   model), so savings decompose by role regardless of outcome.
 
-**Protocol:** flip agent specs (roster/agent-spec model fields) →
-session-restart the fleet → run ~3 comparable snapdex issues under normal
-gates → compare via the ledger grouped by the per-model rows, floor basis,
-same stage-profile analysis as baseline. No mid-arm vendor merges; no
-mid-issue pod recycles (the baseline-hole lesson).
+**Interpretation note, honest:** a mixed fleet measures "how much premium can
+be shed safely" rather than a clean single-variable rate effect — slightly
+muddier as science, operationally the right question for the bill-payer.
+
+**Protocol:** flip the model per agent spec as tabled → session-restart the
+fleet → run ~3 comparable snapdex issues under normal gates → compare via the
+ledger's per-model stage rows, floor basis, same stage-profile analysis as
+baseline. No mid-arm vendor merges; no mid-issue pod recycles.
 
 ## Designed follow-up — charter size (`full` vs `lite`), not yet run
 
