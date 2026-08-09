@@ -9,41 +9,7 @@ AI agents. The team ships real software and spends real money on one shared
 API account. Before this project I could not answer the most basic question
 about it: **what does an issue cost?**
 
-This project makes the team account for its own spending:
-
-1. **A plan card per issue.** When work starts, the team lead agent (Lando)
-   posts a card to the issue's Discord thread: what's in scope, which agents
-   are involved, and which AI model each one runs.
-2. **Each agent reports its own numbers.** At the end of its part of the
-   work, each agent measures what it used (by reading its own session log, via [`token-usage.sh`](docs/mirror/token-usage.sh)),
-   posts a one-line summary to Discord, and attaches the detailed numbers to
-   the GitHub issue in a form software can read back later.
-3. **A price tag on close.** When the issue is done, Lando adds up every
-   agent's numbers and converts them to dollars using published model prices
-   (via [`issue-cost.sh`](docs/mirror/issue-cost.sh)),
-   posts the total to Discord, and appends a row to a running ledger file
-   ([snapshot](docs/mirror/cost-ledger-snapshot.jsonl)) so issues can be compared.
-4. **A platform fix.** Building this exposed that Kyber's own usage metrics
-   dropped "output" tokens entirely and priced cache writes at $0. I fixed it
-   in [kyber#23](https://github.com/matty-v/kyber/pull/23) (released as
-   [v1.0.1](https://github.com/matty-v/kyber/releases/tag/v1.0.1)). It mattered here twice: the fix is why cache-write prices exist
-   in the price table the ledger uses (about 12% of every issue's bill), and
-   it turned the platform's dashboard into a usable second opinion on the
-   agents' self-reports. The token counts themselves never depended on it.
-5. **An experiment.** Change the underlying models by role and measure the
-   effect on both cost and quality. Full results below.
-
-## Where the changes live
-
-| Piece | Repo | Link |
-|---|---|---|
-| Platform fix: output tokens + cache-write pricing | `matty-v/kyber` | [kyber#23](https://github.com/matty-v/kyber/pull/23) (merged) |
-| Agent self-reporting, team charter changes, price table | `matty-v/falcon-dev-common` | merged as fdc#118; private repo, all changes mirrored in [`docs/mirror/`](docs/mirror/README.md) |
-| Lando: plan card, cost roll-up, ledger | `matty-v/lando-agent` | merged as lando-agent#105; private repo, mirrored in [`docs/mirror/`](docs/mirror/README.md) |
-| Experiment write-up | this repo | [`docs/experiments/cost-per-issue.md`](docs/experiments/cost-per-issue.md) |
-| Process log (every prompt, pushback, and AI mistake) | this repo | [`PROCESS.md`](PROCESS.md) |
-
-## The experiment: cheaper models, measured honestly
+## An Experiment in Model Cost versus Quality
 
 Baseline: all eight agents on the premium model (claude-opus-5), 4 live
 issues. Test arm: premium model kept only at the two judgment points
@@ -51,12 +17,12 @@ issues. Test arm: premium model kept only at the two judgment points
 everywhere else, 3 live issues. I wrote the predictions down in this repo
 before the test arm ran.
 
-| | Prediction (written first) | Result |
-|---|---|---|
-| **Cost per issue** | $21–24 (about 35% below the $33.86 baseline) | **$22.63, down 33%** |
-| **Work volume** | unchanged (±15%) | matched on comparable issues (44M vs 46M tokens) |
-| **Quality** | rework stays flat | **Rework rose from 6.9% to 18.3% of issue cost**, and hit all 3 test issues |
-| **Net** | savings win if quality holds | Savings (~$11/issue) paid for the added rework (~$2.10/issue) about 5 times over, in this sample |
+| | Before (all premium model) | Prediction (written first) | Result |
+|---|---|---|---|
+| **Cost per issue** | $33.86 median | $21 to $24 | **$22.63, down 33%** |
+| **Work volume** | 46M tokens median | unchanged, within 15% | 44M on comparable issues: unchanged |
+| **Quality** | 6.9% of issue cost was redone work | stays flat | **18.3% redone, on all 3 test issues** |
+| **Net** | | savings win if quality holds | Savings of about $11 per issue bought about $2.10 of added rework: 5 to 1 in favor, in this sample |
 
 Three checks agree on the cost result:
 
@@ -79,6 +45,41 @@ unmeasured at this sample size: bugs that slip past the reviewer entirely,
 time lost to review loops, and whether rework grows with issue size. The
 biggest test issue had the worst rework share (30% of its cost), which is
 the first thing a follow-up should check.
+
+This project makes the team account for its own spending:
+
+1. **A plan card per issue.** When work starts, the team lead agent (Lando)
+   posts a card to the issue's Discord thread: what's in scope, which agents
+   are involved, and which AI model each one runs.
+2. **Each agent reports its own numbers.** At the end of its part of the
+   work, each agent measures what it used (by reading its own session log, via [`token-usage.sh`](docs/mirror/token-usage.sh)),
+   posts a one-line summary to Discord, and attaches the detailed numbers to
+   the GitHub issue in a form software can read back later.
+3. **A price tag on close.** When the issue is done, Lando adds up every
+   agent's numbers and converts them to dollars using published model prices
+   (via [`issue-cost.sh`](docs/mirror/issue-cost.sh)),
+   posts the total to Discord, and appends a row to a running ledger file
+   ([snapshot](docs/mirror/cost-ledger-snapshot.jsonl)) so issues can be compared.
+4. **A platform fix.** Building this exposed that Kyber's own usage metrics
+   dropped "output" tokens entirely and priced cache writes at $0. I fixed it
+   in [kyber#23](https://github.com/matty-v/kyber/pull/23) (released as
+   [v1.0.1](https://github.com/matty-v/kyber/releases/tag/v1.0.1)). It mattered here twice: the fix is why cache-write prices exist
+   in the price table the ledger uses (about 12% of every issue's bill), and
+   it turned the platform's dashboard into a usable second opinion on the
+   agents' self-reports. The token counts themselves never depended on it.
+5. **An experiment.** Change the underlying models by role and measure the
+   effect on both cost and quality. Full results above, details in
+   [docs/experiments/cost-per-issue.md](docs/experiments/cost-per-issue.md).
+
+## Where the changes live
+
+| Piece | Repo | Link |
+|---|---|---|
+| Platform fix: output tokens + cache-write pricing | `matty-v/kyber` | [kyber#23](https://github.com/matty-v/kyber/pull/23) (merged) |
+| Agent self-reporting, team charter changes, price table | `matty-v/falcon-dev-common` | merged as fdc#118; private repo, all changes mirrored in [`docs/mirror/`](docs/mirror/README.md) |
+| Lando: plan card, cost roll-up, ledger | `matty-v/lando-agent` | merged as lando-agent#105; private repo, mirrored in [`docs/mirror/`](docs/mirror/README.md) |
+| Experiment write-up | this repo | [`docs/experiments/cost-per-issue.md`](docs/experiments/cost-per-issue.md) |
+| Process log (every prompt, pushback, and AI mistake) | this repo | [`PROCESS.md`](PROCESS.md) |
 
 ## How I used AI, and what worked
 
