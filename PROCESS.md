@@ -506,6 +506,20 @@ comment) are excluded as floors and drove a queued post-freeze fix
 (verify-and-retry baseline posting). Full analysis:
 docs/experiments/charter-size.md.
 
+### Session 3, continued — the experiment pivots to the bigger lever
+
+Reviewing levers with the baseline in hand, I asked what else could move cost
+more than the charter — and model tier won the argument Claude laid out:
+uniform 40% rate cut (opus-5 → sonnet-4-5), detectable at n≈3 where a ~10%
+charter effect would drown in issue-size variance, zero vendor churn (the
+reports already record the actual transcript model), and a real quality prior
+(the fleet ran sonnet for months; the baseline is expensive partly BECAUSE of
+the opus upgrade at restart). Experiment doc rewritten
+(docs/experiments/cost-per-issue.md): model tier is the active arm with
+registered predictions (median → $19–23, tokens ±15%, guardrails flat);
+charter-lite demoted to designed follow-up with its hypothesis preserved.
+A deliberate scope decision under time pressure, recorded as such.
+
 ## Trial and error — the whole loop, consolidated (noted for the record at Matt's request)
 
 Every entry above is chronological; this section gathers the trial→error→

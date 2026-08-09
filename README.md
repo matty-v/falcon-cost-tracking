@@ -35,7 +35,7 @@ This project makes the team account for its own spend:
 | Platform fix: output tokens + cache-write pricing | `matty-v/kyber` | [kyber#23](https://github.com/matty-v/kyber/pull/23) (merged) |
 | `token-usage.sh`, charter/contract changes, roster, rates snapshot | `matty-v/falcon-dev-common` | merged as fdc#118 — private repo, mirrored in [`docs/mirror/`](docs/mirror/) |
 | Lando: mini-charter, aggregation, ledger | `matty-v/lando-agent` | merged as lando-agent#105 — private repo, mirrored in [`docs/mirror/`](docs/mirror/) |
-| Experiment protocol + results | this repo | [`docs/experiments/charter-size.md`](docs/experiments/charter-size.md) *(pending)* |
+| Experiment protocol + results | this repo | [`docs/experiments/cost-per-issue.md`](docs/experiments/cost-per-issue.md) |
 | Process log (prompts, pushback, AI mistakes) | this repo | [`PROCESS.md`](PROCESS.md) |
 
 ## Write-up
