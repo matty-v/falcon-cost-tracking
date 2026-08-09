@@ -493,6 +493,19 @@ skills now just run it. Placed in lando-agent rather than falcon-dev-common
 deliberately: the worker vendor bundle stays frozen mid-experiment, so the
 arm's variant tags stay clean.
 
+### Session 3, continued — baseline established under time pressure
+
+Matt called time on the arm; the baseline was computed from all data on hand
+(two official ledger rows + two aggregated locally from the same markers with
+the same script, ahead of Lando's close-out cron): **n=4, median $33.86/issue
+(floor basis), median 46M tokens/issue**, the two hole-free issues within
+$0.19 of each other, and a per-stage profile showing ~14M tokens/issue of
+pre-build "thinking" overhead — the lite variant's target. Two honest
+`unavailable` holes (mid-stage session recycles beating the one-shot baseline
+comment) are excluded as floors and drove a queued post-freeze fix
+(verify-and-retry baseline posting). Full analysis:
+docs/experiments/charter-size.md.
+
 ## Trial and error — the whole loop, consolidated (noted for the record at Matt's request)
 
 Every entry above is chronological; this section gathers the trial→error→
