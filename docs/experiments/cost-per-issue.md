@@ -44,28 +44,32 @@ which shapes which levers matter (see ranking below).
 **Variable:** the model each agent runs — placed by role, not uniformly.
 Matt pushed back on the all-sonnet design: uniform downgrade maximizes savings
 but not savings-per-unit-of-risk. The arm keeps `claude-opus-5` at the two
-error-amplification points and runs `claude-sonnet-4-5` everywhere else:
+error-amplification points and runs `claude-sonnet-5` everywhere else (Matt upgraded the economy tier at wiring time — sonnet-5 is both newer-generation than the sonnet-4-5 first spec AND cheaper):
 
 | agent | role | arm-2 model | rationale |
 |---|---|---|---|
 | obi-wan | architecture | **opus-5** | cheap stage (3.8M), expensive errors — ~$1.20/issue premium is the cheapest insurance in the system |
 | chewie | review + smoke | **opus-5** | the last gate before merge, protecting the cheaper builders; ~$3/issue premium |
-| han / luke | builders | sonnet-4-5 | biggest stage (14.5M) → biggest savings; defects are what the opus reviewer exists to catch |
-| yoda | triage/challenge/verdict | sonnet-4-5 | rubric-driven classification; months of sonnet history |
-| ackbar | deploy | sonnet-4-5 | checklist + verification work; risky ops gated by Matt |
-| boba-fett | QA (off-pipeline) | sonnet-4-5 | findings re-verified on pipeline entry |
-| lando | orchestrator | sonnet-4-5 | contract-following; hard calls escalate to Matt; his always-on background cost isn't even in the per-issue ledger — pure extra savings |
+| han / luke | builders | sonnet-5 | biggest stage (14.5M) → biggest savings; defects are what the opus reviewer exists to catch |
+| yoda | triage/challenge/verdict | sonnet-5 | rubric-driven classification; months of sonnet history |
+| ackbar | deploy | sonnet-5 | checklist + verification work; risky ops gated by Matt |
+| boba-fett | QA (off-pipeline) | sonnet-5 | findings re-verified on pipeline entry |
+| lando | orchestrator | sonnet-5 | contract-following; hard calls escalate to Matt; his always-on background cost isn't even in the per-issue ledger — pure extra savings |
 
-Rates: opus 5 / 25 / 0.5 / 6.25 per MTok vs sonnet 3 / 15 / 0.3 / 3.75 — a
-uniform 40% reduction wherever sonnet runs. Opus is retained on ~41% of
-baseline issue-tokens (architecture + review/smoke).
+Rates: opus 5 / 25 / 0.5 / 6.25 per MTok vs sonnet-5 2 / 10 / 0.2 / 2.5 — a
+uniform 60% reduction wherever sonnet-5 runs. Opus is retained on ~41% of
+baseline issue-tokens (architecture + review/smoke); cost multiplier ≈
+0.41 + 0.59×0.40 ≈ 0.65.
 
 **Registered predictions (written before arm 2 runs):**
-1. **Cost/issue: median ≈ $25–27 (~24% below the $33.86 baseline)** — rate
-   arithmetic over the mixed placement; deliberately ~$6/issue above the
-   all-sonnet floor to keep opus at both judgment gates.
+1. **Cost/issue: median ≈ $21–24 (~35% below the $33.86 baseline)** — rate
+   arithmetic over the mixed placement (updated when Matt wired sonnet-5, a
+   60% rate cut, instead of the sonnet-4-5 first spec at 40%); deliberately
+   ~$2–4/issue above the all-sonnet-5 floor to keep opus at both gates.
 2. **Tokens/issue roughly unchanged (±15%)**; a sonnet-builder needing more
-   turns shows up as stage-token growth and IS the measured tier gap.
+   turns shows up as stage-token growth and IS the measured tier gap — with a
+   plausible surprise in our favor if newer-generation sonnet-5 needs FEWER
+   turns than the 4-5 lineage would have.
 3. **Guardrails flat (kickbacks, `merge: no`, gate failures)** — the design
    bet is that they hold BECAUSE the gates kept opus. If they hold, the
    follow-up arm drops Chewie to sonnet to test whether the review gate
