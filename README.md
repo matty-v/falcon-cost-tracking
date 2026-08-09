@@ -11,11 +11,9 @@ about it: **what does an issue cost?**
 
 ## How the team works an issue
 
-Each box below is a Kubernetes pod on Kyber running a Claude Code session
-with the model shown: gold boxes run the premium model (claude-opus-5), blue
-boxes run the cheaper claude-sonnet-5. This is the placement the experiment
-landed on. Lando (the team lead) receives every GitHub event and routes each
-handoff. Double arrows mark where work gets sent back.
+Each agent box below is a Kubernetes pod on Kyber running its own Claude
+Code session. Lando (the team lead) receives every GitHub event and routes
+each handoff. Dashed red arrows mark where work gets sent back.
 
 <img src="docs/assets/team-flow.svg" width="100%" alt="How the team works an issue: GitHub issue flows through triage, design, challenge, deploy check, human approval, build, review, deploy, smoke test, and close-out, snaking across three rows. Gold boxes run the premium model at the judgment gates; blue boxes run the cheaper model; dashed red arrows mark work sent back.">
 
