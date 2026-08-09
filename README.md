@@ -27,11 +27,13 @@ with [`issue-cost.sh`](docs/mirror/issue-cost.sh) to show me a final number.
 
 ## An Experiment in Model Cost versus Quality
 
-Baseline: all eight agents on the premium model (claude-opus-5), 4 live
-issues. Test arm: premium model kept only at the two judgment points
-(the design stage and the code-review gate), the cheaper claude-sonnet-5
-everywhere else, 3 live issues. I wrote the predictions down in this repo
-before the test arm ran.
+Part of this assignment was to first add cost tracking. I had all the
+agents in the dev team running Opus 5 models before, which was inefficient.
+I hypothesized that I could get away with cheaper models on some agents with
+the hope of keeping quality high. To orchestrate and execute this experiment
+I ran another local Claude Code session on Fable 5. The job of this agent
+was to help me set up the experiment, implement cost tracking across the AI
+dev team, and measure and publish the results.
 
 | | Before (all premium model) | Prediction (written first) | Result |
 |---|---|---|---|
