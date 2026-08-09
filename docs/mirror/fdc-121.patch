@@ -1,0 +1,67 @@
+commit 34c3eb6c871a5f320c1a0dc87780804194afb48f
+Author: Matt Voget <matt.voget@gmail.com>
+Date:   Fri Aug 7 15:31:44 2026 -0600
+
+    feat(cost): 📊 bullet carries cache-read share (defuse raw-count sticker shock) (#121)
+    
+    Co-authored-by: Claude Fable 5 <noreply@anthropic.com>
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index cf70087..08bd167 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -10,6 +10,11 @@ merges unless explicitly noted.
+ 
+ ## Unreleased
+ 
++- Change: **📊 OUTCOME bullet now carries the cache-read share** (2026-08-07) —
++  `• 📊 ~10.4M tokens (~87% cache reads) · sonnet`. A raw token total reads
++  scarier than the money it represents (97% of the first live report was
++  cache reads at ~1/10th the input rate); the share defuses the misread
++  without moving pricing into workers' hands (Lando still owns the $).
+ - Add: **Per-issue cost tracking** (2026-08-07). Every worker now self-reports its
+   stage's token usage — `scripts/token-usage.sh` sums the agent's own Claude Code
+   transcripts (per model, output tokens included) at pickup (baseline) and
+diff --git a/skills/discord-post.md b/skills/discord-post.md
+index f539df8..0e10d7b 100644
+--- a/skills/discord-post.md
++++ b/skills/discord-post.md
+@@ -55,8 +55,9 @@ Rules:
+ - **Intent → outcome.** Pickup post = what you're about to do. Completion post = how it went.
+ - **BAN-LIST — never include any of these:** test counts ("602 tests", "501/501"), commit hashes/SHAs, PR-stacking detail ("stacked on #304"), file paths, framework/tool names, implementation jargon ("append-only enforced server-side", "tsc clean", "ff-merge", "vite build"). If you're describing *how* you built it, delete it — say *what* it does for the user.
+ - **Chartered ban-list carve-out — the 📊 cost bullet (cost tracking, CONTRACTS §10):** OUTCOME
+-  posts carry exactly ONE trailing bullet with rounded stage tokens + model short-name
+-  (`• 📊 ~10.4M tokens this stage (sonnet)`); Lando's kickoff/summary cards carry their chartered
++  posts carry exactly ONE trailing bullet with rounded stage tokens, cache-read share, and model
++  short-name (`• 📊 ~10.4M tokens (~87% cache reads) · sonnet` — the share defuses raw-count
++  sticker shock; see handle-inbound Step 4b); Lando's kickoff/summary cards carry their chartered
+   cost lines. Matt pays the bill, so spend IS user-facing. Everything else on the ban-list stands —
+   no raw counts-by-type, no rate math, no transcript jargon in posts.
+ - **Markdown:** leading emoji + **bold** headline; bullets for the body; `→` for handoffs.
+diff --git a/skills/handle-inbound.md b/skills/handle-inbound.md
+index 15024b8..35338ee 100644
+--- a/skills/handle-inbound.md
++++ b/skills/handle-inbound.md
+@@ -291,10 +291,18 @@ Post only YOUR stage — don't narrate the pipeline; that's Lando's job. The thr
+ 
+ **Token-usage self-report — REQUIRED part of completion (cost tracking, CONTRACTS §10).** Before
+ posting, compute your stage's usage delta and add ONE 📊 bullet to the OUTCOME post (the single
+-chartered exception to the ban-list — see `discord-post.md`): rounded total tokens + model
+-short-name, e.g. `• 📊 ~10.4M tokens this stage (sonnet)`. If the report's `quality` is
+-`unavailable`, the bullet is `• 📊 token usage unavailable (<reason>)` — **never 0, never a
+-guess**; a `lower_bound` report reads `• 📊 ≥8.2M tokens this stage (sonnet)`.
++chartered exception to the ban-list — see `discord-post.md`): rounded total tokens, the
++**cache-read share**, and the model short-name:
++
++`• 📊 ~10.4M tokens (~87% cache reads) · sonnet`
++
++The cache-read share is `cache_read / (input+output+cache_read+cache_creation)` from your
++report's counts, rounded to the nearest percent — it's there because a raw token total reads
++scarier than the money it represents (cache reads bill at ~1/10th the input rate; Matt misread
++the very first live report this way, 2026-08-07). Omit the parenthetical only when the share is
++below 50%. If the report's `quality` is `unavailable`, the bullet is
++`• 📊 token usage unavailable (<reason>)` — **never 0, never a guess**; a `lower_bound` report
++reads `• 📊 ≥8.2M tokens (~90% cache reads) · sonnet`.
+ 
+ **COMPLETION COMMENT on the issue — REQUIRED (Dave per Matt, 2026-08-02).** The counterpart to the
+ pickup comment. Without it the item never leaves `/recover-stalls`'s in-flight rebuild and will be

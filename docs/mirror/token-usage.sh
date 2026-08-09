@@ -145,14 +145,16 @@ cmd_baseline() {
   local marker=false
   [[ "${1:-}" == "--marker" ]] && marker=true
   mkdir -p "${RUNTIME_DIR}"
-  local scan taken file
-  scan="$(scan_tree)"
+  local scanfile taken file
+  scanfile="$(mktemp)"                 # file, not env var — E2BIG (snapdex#995)
+  scan_tree > "${scanfile}"
   taken="$(now_iso)"
   file="${RUNTIME_DIR}/usage-baseline-$(sanitize "${envelope}").json"
   local json
-  json="$(SCAN_JSON="${scan}" python3 - "$envelope" "$taken" <<'PYEOF'
+  json="$(python3 - "$envelope" "$taken" "${scanfile}" <<'PYEOF'
 import json, os, sys
-scan = json.loads(os.environ["SCAN_JSON"])
+with open(sys.argv[3]) as f:
+    scan = json.load(f)
 # Prune zero-usage files: the baseline rides inside a GitHub comment, so it must
 # stay bounded. A file absent from the baseline counts IN FULL at report time,
 # which is exactly right for a file that had no finalized usage at baseline.
@@ -161,6 +163,7 @@ print(json.dumps({"v": 1, "envelope_id": sys.argv[1], "taken_at": sys.argv[2],
                   "files": files, "totals": scan["totals"]}, sort_keys=True))
 PYEOF
 )"
+  rm -f "${scanfile}"
   printf '%s\n' "${json}" > "${file}"
   if ${marker}; then wrap_marker "falcon:usage-baseline:v1" "${json}"; else printf '%s\n' "${json}"; fi
 }
@@ -172,10 +175,13 @@ recover_baseline() {
   local envelope="$1" issue="$2"
   local repo="${issue%#*}" num="${issue##*#}"
   local gh_wrapper="${FALCON_GH_ISSUE_OVERRIDE:-${SCRIPT_ROOT}/hooks/gh-issue.sh}"
-  local comments
-  comments="$("${gh_wrapper}" api "repos/${repo}/issues/${num}/comments" --paginate 2>/dev/null || true)"
-  [[ -z "${comments}" ]] && return 0
-  COMMENTS_JSON="${comments}" python3 - "$envelope" <<'PYEOF'
+  # Payload via FILE, not env var — a busy issue's comments exceed the kernel's
+  # ~128KB per-env-string limit and E2BIG the exec (the snapdex#995 lesson).
+  local cfile
+  cfile="$(mktemp)"
+  "${gh_wrapper}" api "repos/${repo}/issues/${num}/comments" --paginate > "${cfile}" 2>/dev/null || true
+  [[ -s "${cfile}" ]] || { rm -f "${cfile}"; return 0; }
+  python3 - "$envelope" "${cfile}" <<'PYEOF'
 import json, os, re, sys
 
 envelope = sys.argv[1]
@@ -196,7 +202,8 @@ def decode_pages(text):
             idx += 1
     return out
 
-comments = decode_pages(os.environ["COMMENTS_JSON"])
+with open(sys.argv[2]) as f:
+    comments = decode_pages(f.read())
 # Both marker forms: the one-liner AND the fenced fallback wrap_marker emits
 # when the JSON contains "--" (transcript-path slugs genuinely produce that).
 pats = (re.compile(r"<!-- falcon:usage-baseline:v1 (\{.*?\}) -->", re.S),
@@ -214,6 +221,7 @@ for c in comments:
                 print(json.dumps(b, sort_keys=True))
                 sys.exit(0)
 PYEOF
+  rm -f "${cfile}"
 }
 
 cmd_report() {
@@ -229,24 +237,27 @@ cmd_report() {
   done
   [[ -z "${stage}" || -z "${issue}" ]] && usage
 
+  # Baseline + scan travel via FILES, never env vars — either can exceed the
+  # kernel's ~128KB per-env-string limit and E2BIG the exec (snapdex#995).
   local bfile="${RUNTIME_DIR}/usage-baseline-$(sanitize "${envelope}").json"
-  local baseline=""
+  local basefile scanfile json
+  basefile="$(mktemp)"
   if [[ -r "${bfile}" ]]; then
-    baseline="$(cat "${bfile}")"
+    cat "${bfile}" > "${basefile}"
   else
-    baseline="$(recover_baseline "${envelope}" "${issue}")"
+    recover_baseline "${envelope}" "${issue}" > "${basefile}"
   fi
-
-  local scan json
-  scan="$(scan_tree)"
-  json="$(BASELINE_JSON="${baseline}" SCAN_JSON="${scan}" \
-    python3 - "${AGENT_NAME}" "${envelope}" "${stage}" "${issue}" "$(now_iso)" "$(variant)" <<'PYEOF'
+  scanfile="$(mktemp)"
+  scan_tree > "${scanfile}"
+  json="$(python3 - "${AGENT_NAME}" "${envelope}" "${stage}" "${issue}" "$(now_iso)" "$(variant)" "${scanfile}" "${basefile}" <<'PYEOF'
 import json, os, sys
 
 agent, envelope, stage, issue, now, variant = sys.argv[1:7]
 ZERO = lambda: {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0, "api_calls": 0}
-scan = json.loads(os.environ["SCAN_JSON"])
-raw = os.environ.get("BASELINE_JSON") or ""
+with open(sys.argv[7]) as f:
+    scan = json.load(f)
+with open(sys.argv[8]) as f:
+    raw = f.read()
 
 out = {"v": 1, "agent": agent, "envelope_id": envelope, "stage_label": stage,
        "issue": issue, "window": {"from": None, "to": now}, "models": {},
@@ -314,6 +325,7 @@ if not out["models"] and discontinuous:
 print(json.dumps(out, sort_keys=True))
 PYEOF
 )"
+  rm -f "${scanfile}" "${basefile}"
   if ${marker}; then wrap_marker "falcon:usage:v1" "${json}"; else printf '%s\n' "${json}"; fi
 }
 

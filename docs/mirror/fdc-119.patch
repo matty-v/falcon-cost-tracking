@@ -1,0 +1,46 @@
+commit d45760be113590e0b4162ad7710510ee5ae204e1
+Author: Matt Voget <matt.voget@gmail.com>
+Date:   Fri Aug 7 14:53:24 2026 -0600
+
+    fix(propagate): move the vendor pin file with the bundle; fan out on CONTRACTS/config/VARIANT changes (#119)
+    
+    The fan-out replaced vendor/falcon-dev-common/ but left
+    vendor/falcon-dev-common-version untouched, so every agent's pin lied about
+    the vendored contract (and token-usage.sh stamped the stale sha into
+    charter_variant). Also: CONTRACTS.md, config/**, and VARIANT are vendored and
+    normative but were missing from the trigger paths — a rates refresh or
+    variant flip would silently not propagate.
+    
+    Co-authored-by: Claude Fable 5 <noreply@anthropic.com>
+
+diff --git a/.github/workflows/propagate-vendor.yml b/.github/workflows/propagate-vendor.yml
+index 0b47418..6e486e0 100644
+--- a/.github/workflows/propagate-vendor.yml
++++ b/.github/workflows/propagate-vendor.yml
+@@ -18,7 +18,10 @@ on:
+     # Must cover EVERY vendored path. scripts/ + hooks/ were missing, so a
+     # scripts-only change (e.g. discord-post.sh) silently failed to fan out to the
+     # agents (caught 2026-06-27 — a Discord threading fix didn't propagate).
+-    paths: ['skills/**', 'scripts/**', 'hooks/**', 'docs/**', 'CHARTER.md', 'README.md', 'vendor/**', 'templates/**', 'profiles/**']
++    # CONTRACTS.md / config/** / VARIANT added 2026-08-07 (cost tracking): all
++    # three are vendored and normative — a rates refresh or variant flip that
++    # didn't fan out would leave agents pricing/tagging from a stale bundle.
++    paths: ['skills/**', 'scripts/**', 'hooks/**', 'docs/**', 'CHARTER.md', 'CONTRACTS.md', 'README.md', 'vendor/**', 'templates/**', 'profiles/**', 'config/**', 'VARIANT']
+   workflow_dispatch:
+ 
+ jobs:
+@@ -57,7 +60,13 @@ jobs:
+             rm -rf /tmp/${a}-agent/vendor/falcon-dev-common
+             mkdir -p /tmp/${a}-agent/vendor/falcon-dev-common
+             git archive --format=tar "$SHA" | tar -x -C /tmp/${a}-agent/vendor/falcon-dev-common
+-            git -C /tmp/${a}-agent add vendor/falcon-dev-common/
++            # The pin file is the documented answer to "which contract does this
++            # agent run" — and token-usage.sh stamps its sha into every usage
++            # report's charter_variant. It MUST move with the bundle (caught
++            # 2026-08-07: bundles rolled to 2698293 while every pin still read
++            # 9c63b54).
++            echo "$SHA" > /tmp/${a}-agent/vendor/falcon-dev-common-version
++            git -C /tmp/${a}-agent add vendor/falcon-dev-common/ vendor/falcon-dev-common-version
+             if git -C /tmp/${a}-agent diff --cached --quiet; then
+               echo "already current — skip"; skipped=$((skipped+1)); echo "::endgroup::"; continue
+             fi

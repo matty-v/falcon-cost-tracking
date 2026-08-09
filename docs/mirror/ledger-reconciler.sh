@@ -46,26 +46,55 @@ for i in data if isinstance(data, list) else []:
         print(i["number"])' 2>/dev/null || true)"
   for num in $nums; do
     ref="matty-v/${repo}#${num}"
-    # Idempotency: the ledger itself is the ledger of what has been ledgered.
-    grep -qs "\"issue\": \"${ref}\"" "$FALCON_LEDGER_FILE" 2>/dev/null && continue
+    # Idempotency: a PRICED row is final. An UNPRICED row (e.g. rates file was
+    # unreadable at write time — the 2026-08-08 #995 first row) is retried and
+    # SUPERSEDED in place when a re-run can price it; git history keeps the
+    # original.
+    existing="$(grep -s "\"issue\": \"${ref}\"" "$FALCON_LEDGER_FILE" 2>/dev/null | tail -1)"
+    if [ -n "$existing" ]; then
+      case "$existing" in *'"priced": true'*) continue ;; esac
+    fi
     comments="$("$GH" api "repos/matty-v/${repo}/issues/${num}/comments" --paginate 2>/dev/null || true)"
     printf '%s' "$comments" | grep -q "falcon:usage:v1" || continue  # pre-cost-tracking issue
     row="$(FALCON_GH_ISSUE="$GH" bash "$IC" "$ref" 2>/dev/null || true)"
     if [ -z "$row" ]; then
-      echo "ledger-reconciler: WARN aggregation failed for ${ref}" >&2
+      echo "ledger-reconciler: WARN aggregation failed for ${ref}"  # stdout ON PURPOSE: the cron reports stdout only — stderr warnings died silently on 2026-08-08
       continue
     fi
+    case "$row" in
+      *'"priced": false'*|*'"priced": null'*)
+        if [ -n "$existing" ]; then
+          continue  # still unpriced — nothing to supersede with
+        fi
+        # Self-diagnose the most likely cause inline (a warning nobody can
+        # act on is not a warning):
+        rates_state="missing"
+        [ -r "${SCRIPT_ROOT}/config/provider-rates.yaml" ] && rates_state="present"
+        echo "ledger-reconciler: appended ${ref} UNPRICED (rates file ${rates_state} at ${SCRIPT_ROOT}/config/provider-rates.yaml)" ;;
+      *)
+        if [ -n "$existing" ]; then
+          python3 - "$FALCON_LEDGER_FILE" "$ref" <<'PYSUP'
+import json, sys
+path, ref = sys.argv[1], sys.argv[2]
+lines = [l for l in open(path).read().splitlines() if l.strip()]
+kept = [l for l in lines if json.loads(l).get("issue") != ref]
+open(path, "w").write("\n".join(kept) + ("\n" if kept else ""))
+PYSUP
+          echo "ledger-reconciler: SUPERSEDED unpriced row for ${ref} with priced row"
+        else
+          echo "ledger-reconciler: appended ${ref}"
+        fi ;;
+    esac
     mkdir -p "$(dirname "$FALCON_LEDGER_FILE")"
     printf '%s\n' "$row" >> "$FALCON_LEDGER_FILE"
     appended=$((appended + 1))
-    echo "ledger-reconciler: appended ${ref}"
   done
 done
 
 if [ "$appended" -gt 0 ] && [ -d "${AGENT_HOME}/.git" ] && [ -z "${FALCON_LEDGER_NO_GIT:-}" ]; then
   git -C "$AGENT_HOME" add "$(realpath "$FALCON_LEDGER_FILE" 2>/dev/null || echo reports/cost-ledger.jsonl)" 2>/dev/null || true
   git -C "$AGENT_HOME" commit -q -m "ledger-reconciler: backstop row(s) for ${appended} issue(s)" || true
-  git -C "$AGENT_HOME" push -q || echo "ledger-reconciler: WARN push failed (rows committed locally)" >&2
+  git -C "$AGENT_HOME" push -q || echo "ledger-reconciler: WARN push failed (rows committed locally)"
 fi
 
 exit 0

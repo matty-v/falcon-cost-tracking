@@ -1,0 +1,215 @@
+commit 6a0c8c27ca3a56cdb891a10c9b8b9e3e383f0ff2
+Author: Matt Voget <matt.voget@gmail.com>
+Date:   Fri Aug 7 21:16:53 2026 -0600
+
+    fix(cost): E2BIG — pass all large payloads via files, never env vars; reconciler warnings to stdout (#123)
+    
+    Lando's own escalation diagnosed the reconciler death: the paginated
+    timeline JSON passed to python via env var exceeded the kernel's ~128KB
+    per-env-string limit (E2BIG at exec), masked by the reconciler's exit 0 +
+    stderr-only warnings. All payload passing (timeline, comments recovery,
+    scan/baseline) now goes through temp files; reconciler warnings print to
+    stdout so the cron report surfaces them. +E2BIG regression test (300KB
+    timeline).
+    
+    Co-authored-by: Claude Fable 5 <noreply@anthropic.com>
+
+diff --git a/scripts/issue-cost.sh b/scripts/issue-cost.sh
+index ad21455..c9cc63f 100755
+--- a/scripts/issue-cost.sh
++++ b/scripts/issue-cost.sh
+@@ -57,10 +57,13 @@ trap 'rm -rf "${WORK}"' EXIT
+ # same repo) and union them with any --pr args: the pipeline record's pr_ref is
+ # usually unwritten (CONTRACTS §9.5), and review/deploy stages post their usage
+ # markers on the PR — missing those would silently undercount the issue.
+-TIMELINE="$("$GH" api "repos/${REPO}/issues/${NUM}/timeline" --paginate 2>/dev/null || true)"
+-if [[ -n "${TIMELINE}" ]]; then
+-  DISCOVERED="$(TIMELINE_JSON="${TIMELINE}" REPO_ARG="${REPO}" python3 - <<'PYEOF'
+-import json, os
++# Payload goes through a FILE, never an env var: a paginated timeline can
++# exceed the kernel's ~128KB per-env-string limit and kill the exec with
++# E2BIG (the 2026-08-08 snapdex#995 reconciler death — found by Lando).
++"$GH" api "repos/${REPO}/issues/${NUM}/timeline" --paginate > "${WORK}/timeline.json" 2>/dev/null || : > "${WORK}/timeline.json"
++if [[ -s "${WORK}/timeline.json" ]]; then
++  DISCOVERED="$(REPO_ARG="${REPO}" python3 - "${WORK}/timeline.json" <<'PYEOF'
++import json, os, sys
+ 
+ def decode_pages(text):
+     dec, idx, out = json.JSONDecoder(), 0, []
+@@ -78,7 +81,9 @@ def decode_pages(text):
+ 
+ repo = os.environ["REPO_ARG"]
+ nums = set()
+-for ev in decode_pages(os.environ["TIMELINE_JSON"]):
++with open(sys.argv[1]) as f:
++    timeline_text = f.read()
++for ev in decode_pages(timeline_text):
+     if not isinstance(ev, dict) or ev.get("event") != "cross-referenced":
+         continue
+     src = (ev.get("source") or {}).get("issue") or {}
+diff --git a/scripts/ledger-reconciler.sh b/scripts/ledger-reconciler.sh
+index 34dac86..c5bdc24 100755
+--- a/scripts/ledger-reconciler.sh
++++ b/scripts/ledger-reconciler.sh
+@@ -52,7 +52,7 @@ for i in data if isinstance(data, list) else []:
+     printf '%s' "$comments" | grep -q "falcon:usage:v1" || continue  # pre-cost-tracking issue
+     row="$(FALCON_GH_ISSUE="$GH" bash "$IC" "$ref" 2>/dev/null || true)"
+     if [ -z "$row" ]; then
+-      echo "ledger-reconciler: WARN aggregation failed for ${ref}" >&2
++      echo "ledger-reconciler: WARN aggregation failed for ${ref}"  # stdout ON PURPOSE: the cron reports stdout only — stderr warnings died silently on 2026-08-08
+       continue
+     fi
+     mkdir -p "$(dirname "$FALCON_LEDGER_FILE")"
+@@ -65,7 +65,7 @@ done
+ if [ "$appended" -gt 0 ] && [ -d "${AGENT_HOME}/.git" ] && [ -z "${FALCON_LEDGER_NO_GIT:-}" ]; then
+   git -C "$AGENT_HOME" add "$(realpath "$FALCON_LEDGER_FILE" 2>/dev/null || echo reports/cost-ledger.jsonl)" 2>/dev/null || true
+   git -C "$AGENT_HOME" commit -q -m "ledger-reconciler: backstop row(s) for ${appended} issue(s)" || true
+-  git -C "$AGENT_HOME" push -q || echo "ledger-reconciler: WARN push failed (rows committed locally)" >&2
++  git -C "$AGENT_HOME" push -q || echo "ledger-reconciler: WARN push failed (rows committed locally)"
+ fi
+ 
+ exit 0
+diff --git a/scripts/tests/test_issue_cost.sh b/scripts/tests/test_issue_cost.sh
+index cfcd88d..91c6fd4 100755
+--- a/scripts/tests/test_issue_cost.sh
++++ b/scripts/tests/test_issue_cost.sh
+@@ -186,6 +186,24 @@ PYEOF
+ R="$("${SUT}" matty-v/snapdex#49 --metrics-json "${SBX}/metrics2.json")"
+ echo "$R" | grep -q "excludes unpriced rows: claude-mystery" && pass "unpriced metrics rows labeled" || fail "unpriced label: $R"
+ 
++# --- E2BIG regression: a >256KB timeline must not kill discovery ------------
++# (Env-var payload passing died with E2BIG past the kernel's ~128KB per-string
++# limit — the 2026-08-08 reconciler death. Payloads now travel via files.)
++python3 - "$SBX" "$(usage_marker han s claude-sonnet-4-5 1000000 0 0 0 exact)" \
++  "$(usage_marker chewie merge-requested claude-sonnet-4-5 500000 0 0 0 exact)" <<'PYEOF'
++import json, os, sys
++sbx, han, chewie = sys.argv[1:4]
++g = lambda name, s: open(os.path.join(sbx, "gh", name), "w").write(s)
++pad = [{"event": "commented", "filler": "x" * 500} for _ in range(600)]  # ~300KB
++tl = pad + [{"event": "cross-referenced", "source": {"issue": {"number": 88, "pull_request": {},
++      "repository": {"full_name": "matty-v/snapdex"}}}}]
++g("repos_matty-v_snapdex_issues_50_timeline.json", json.dumps(tl))
++g("repos_matty-v_snapdex_issues_50_comments.json", json.dumps([{"body": han}]))
++g("repos_matty-v_snapdex_issues_50.json", json.dumps({"title": "t", "body": ""}))
++PYEOF
++R="$("${SUT}" matty-v/snapdex#50)"
++[[ "$(echo "$R" | jqget totals.tokens.input)" == "1500000" ]] && pass "300KB timeline survived (E2BIG regression)" || fail "e2big: $(echo "$R" | head -c 200)"
++
+ echo
+ echo "issue-cost: ${PASS} passed, ${FAIL} failed"
+ [[ "${FAIL}" -eq 0 ]]
+diff --git a/scripts/token-usage.sh b/scripts/token-usage.sh
+index a48a869..b4fb249 100755
+--- a/scripts/token-usage.sh
++++ b/scripts/token-usage.sh
+@@ -145,14 +145,16 @@ cmd_baseline() {
+   local marker=false
+   [[ "${1:-}" == "--marker" ]] && marker=true
+   mkdir -p "${RUNTIME_DIR}"
+-  local scan taken file
+-  scan="$(scan_tree)"
++  local scanfile taken file
++  scanfile="$(mktemp)"                 # file, not env var — E2BIG (snapdex#995)
++  scan_tree > "${scanfile}"
+   taken="$(now_iso)"
+   file="${RUNTIME_DIR}/usage-baseline-$(sanitize "${envelope}").json"
+   local json
+-  json="$(SCAN_JSON="${scan}" python3 - "$envelope" "$taken" <<'PYEOF'
++  json="$(python3 - "$envelope" "$taken" "${scanfile}" <<'PYEOF'
+ import json, os, sys
+-scan = json.loads(os.environ["SCAN_JSON"])
++with open(sys.argv[3]) as f:
++    scan = json.load(f)
+ # Prune zero-usage files: the baseline rides inside a GitHub comment, so it must
+ # stay bounded. A file absent from the baseline counts IN FULL at report time,
+ # which is exactly right for a file that had no finalized usage at baseline.
+@@ -161,6 +163,7 @@ print(json.dumps({"v": 1, "envelope_id": sys.argv[1], "taken_at": sys.argv[2],
+                   "files": files, "totals": scan["totals"]}, sort_keys=True))
+ PYEOF
+ )"
++  rm -f "${scanfile}"
+   printf '%s\n' "${json}" > "${file}"
+   if ${marker}; then wrap_marker "falcon:usage-baseline:v1" "${json}"; else printf '%s\n' "${json}"; fi
+ }
+@@ -172,10 +175,13 @@ recover_baseline() {
+   local envelope="$1" issue="$2"
+   local repo="${issue%#*}" num="${issue##*#}"
+   local gh_wrapper="${FALCON_GH_ISSUE_OVERRIDE:-${SCRIPT_ROOT}/hooks/gh-issue.sh}"
+-  local comments
+-  comments="$("${gh_wrapper}" api "repos/${repo}/issues/${num}/comments" --paginate 2>/dev/null || true)"
+-  [[ -z "${comments}" ]] && return 0
+-  COMMENTS_JSON="${comments}" python3 - "$envelope" <<'PYEOF'
++  # Payload via FILE, not env var — a busy issue's comments exceed the kernel's
++  # ~128KB per-env-string limit and E2BIG the exec (the snapdex#995 lesson).
++  local cfile
++  cfile="$(mktemp)"
++  "${gh_wrapper}" api "repos/${repo}/issues/${num}/comments" --paginate > "${cfile}" 2>/dev/null || true
++  [[ -s "${cfile}" ]] || { rm -f "${cfile}"; return 0; }
++  python3 - "$envelope" "${cfile}" <<'PYEOF'
+ import json, os, re, sys
+ 
+ envelope = sys.argv[1]
+@@ -196,7 +202,8 @@ def decode_pages(text):
+             idx += 1
+     return out
+ 
+-comments = decode_pages(os.environ["COMMENTS_JSON"])
++with open(sys.argv[2]) as f:
++    comments = decode_pages(f.read())
+ # Both marker forms: the one-liner AND the fenced fallback wrap_marker emits
+ # when the JSON contains "--" (transcript-path slugs genuinely produce that).
+ pats = (re.compile(r"<!-- falcon:usage-baseline:v1 (\{.*?\}) -->", re.S),
+@@ -214,6 +221,7 @@ for c in comments:
+                 print(json.dumps(b, sort_keys=True))
+                 sys.exit(0)
+ PYEOF
++  rm -f "${cfile}"
+ }
+ 
+ cmd_report() {
+@@ -229,24 +237,27 @@ cmd_report() {
+   done
+   [[ -z "${stage}" || -z "${issue}" ]] && usage
+ 
++  # Baseline + scan travel via FILES, never env vars — either can exceed the
++  # kernel's ~128KB per-env-string limit and E2BIG the exec (snapdex#995).
+   local bfile="${RUNTIME_DIR}/usage-baseline-$(sanitize "${envelope}").json"
+-  local baseline=""
++  local basefile scanfile json
++  basefile="$(mktemp)"
+   if [[ -r "${bfile}" ]]; then
+-    baseline="$(cat "${bfile}")"
++    cat "${bfile}" > "${basefile}"
+   else
+-    baseline="$(recover_baseline "${envelope}" "${issue}")"
++    recover_baseline "${envelope}" "${issue}" > "${basefile}"
+   fi
+-
+-  local scan json
+-  scan="$(scan_tree)"
+-  json="$(BASELINE_JSON="${baseline}" SCAN_JSON="${scan}" \
+-    python3 - "${AGENT_NAME}" "${envelope}" "${stage}" "${issue}" "$(now_iso)" "$(variant)" <<'PYEOF'
++  scanfile="$(mktemp)"
++  scan_tree > "${scanfile}"
++  json="$(python3 - "${AGENT_NAME}" "${envelope}" "${stage}" "${issue}" "$(now_iso)" "$(variant)" "${scanfile}" "${basefile}" <<'PYEOF'
+ import json, os, sys
+ 
+ agent, envelope, stage, issue, now, variant = sys.argv[1:7]
+ ZERO = lambda: {"input": 0, "output": 0, "cache_read": 0, "cache_creation": 0, "api_calls": 0}
+-scan = json.loads(os.environ["SCAN_JSON"])
+-raw = os.environ.get("BASELINE_JSON") or ""
++with open(sys.argv[7]) as f:
++    scan = json.load(f)
++with open(sys.argv[8]) as f:
++    raw = f.read()
+ 
+ out = {"v": 1, "agent": agent, "envelope_id": envelope, "stage_label": stage,
+        "issue": issue, "window": {"from": None, "to": now}, "models": {},
+@@ -314,6 +325,7 @@ if not out["models"] and discontinuous:
+ print(json.dumps(out, sort_keys=True))
+ PYEOF
+ )"
++  rm -f "${scanfile}" "${basefile}"
+   if ${marker}; then wrap_marker "falcon:usage:v1" "${json}"; else printf '%s\n' "${json}"; fi
+ }
+ 

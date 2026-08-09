@@ -57,10 +57,13 @@ trap 'rm -rf "${WORK}"' EXIT
 # same repo) and union them with any --pr args: the pipeline record's pr_ref is
 # usually unwritten (CONTRACTS §9.5), and review/deploy stages post their usage
 # markers on the PR — missing those would silently undercount the issue.
-TIMELINE="$("$GH" api "repos/${REPO}/issues/${NUM}/timeline" --paginate 2>/dev/null || true)"
-if [[ -n "${TIMELINE}" ]]; then
-  DISCOVERED="$(TIMELINE_JSON="${TIMELINE}" REPO_ARG="${REPO}" python3 - <<'PYEOF'
-import json, os
+# Payload goes through a FILE, never an env var: a paginated timeline can
+# exceed the kernel's ~128KB per-env-string limit and kill the exec with
+# E2BIG (the 2026-08-08 snapdex#995 reconciler death — found by Lando).
+"$GH" api "repos/${REPO}/issues/${NUM}/timeline" --paginate > "${WORK}/timeline.json" 2>/dev/null || : > "${WORK}/timeline.json"
+if [[ -s "${WORK}/timeline.json" ]]; then
+  DISCOVERED="$(REPO_ARG="${REPO}" python3 - "${WORK}/timeline.json" <<'PYEOF'
+import json, os, sys
 
 def decode_pages(text):
     dec, idx, out = json.JSONDecoder(), 0, []
@@ -78,7 +81,9 @@ def decode_pages(text):
 
 repo = os.environ["REPO_ARG"]
 nums = set()
-for ev in decode_pages(os.environ["TIMELINE_JSON"]):
+with open(sys.argv[1]) as f:
+    timeline_text = f.read()
+for ev in decode_pages(timeline_text):
     if not isinstance(ev, dict) or ev.get("event") != "cross-referenced":
         continue
     src = (ev.get("source") or {}).get("issue") or {}

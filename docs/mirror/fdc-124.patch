@@ -1,0 +1,102 @@
+commit 7f776101f844c98d6ed77e1c0b9dfbe3d968f61b
+Author: Matt Voget <matt.voget@gmail.com>
+Date:   Fri Aug 7 21:23:36 2026 -0600
+
+    fix(cost): reconciler supersedes unpriced rows; self-diagnoses rates file (#124)
+    
+    An unpriced backstop row (the first #995 row — rates unreadable in-pod)
+    was final forever under append-once idempotency. Now: priced rows are
+    final; unpriced rows are retried and superseded in place when a re-run
+    can price them (git history keeps the original). Unpriced appends report
+    whether the rates file was readable — a warning nobody can act on is not
+    a warning.
+    
+    Co-authored-by: Claude Fable 5 <noreply@anthropic.com>
+
+diff --git a/scripts/ledger-reconciler.sh b/scripts/ledger-reconciler.sh
+index c5bdc24..45b8382 100755
+--- a/scripts/ledger-reconciler.sh
++++ b/scripts/ledger-reconciler.sh
+@@ -46,8 +46,14 @@ for i in data if isinstance(data, list) else []:
+         print(i["number"])' 2>/dev/null || true)"
+   for num in $nums; do
+     ref="matty-v/${repo}#${num}"
+-    # Idempotency: the ledger itself is the ledger of what has been ledgered.
+-    grep -qs "\"issue\": \"${ref}\"" "$FALCON_LEDGER_FILE" 2>/dev/null && continue
++    # Idempotency: a PRICED row is final. An UNPRICED row (e.g. rates file was
++    # unreadable at write time — the 2026-08-08 #995 first row) is retried and
++    # SUPERSEDED in place when a re-run can price it; git history keeps the
++    # original.
++    existing="$(grep -s "\"issue\": \"${ref}\"" "$FALCON_LEDGER_FILE" 2>/dev/null | tail -1)"
++    if [ -n "$existing" ]; then
++      case "$existing" in *'"priced": true'*) continue ;; esac
++    fi
+     comments="$("$GH" api "repos/matty-v/${repo}/issues/${num}/comments" --paginate 2>/dev/null || true)"
+     printf '%s' "$comments" | grep -q "falcon:usage:v1" || continue  # pre-cost-tracking issue
+     row="$(FALCON_GH_ISSUE="$GH" bash "$IC" "$ref" 2>/dev/null || true)"
+@@ -55,10 +61,33 @@ for i in data if isinstance(data, list) else []:
+       echo "ledger-reconciler: WARN aggregation failed for ${ref}"  # stdout ON PURPOSE: the cron reports stdout only — stderr warnings died silently on 2026-08-08
+       continue
+     fi
++    case "$row" in
++      *'"priced": false'*|*'"priced": null'*)
++        if [ -n "$existing" ]; then
++          continue  # still unpriced — nothing to supersede with
++        fi
++        # Self-diagnose the most likely cause inline (a warning nobody can
++        # act on is not a warning):
++        rates_state="missing"
++        [ -r "${SCRIPT_ROOT}/config/provider-rates.yaml" ] && rates_state="present"
++        echo "ledger-reconciler: appended ${ref} UNPRICED (rates file ${rates_state} at ${SCRIPT_ROOT}/config/provider-rates.yaml)" ;;
++      *)
++        if [ -n "$existing" ]; then
++          python3 - "$FALCON_LEDGER_FILE" "$ref" <<'PYSUP'
++import json, sys
++path, ref = sys.argv[1], sys.argv[2]
++lines = [l for l in open(path).read().splitlines() if l.strip()]
++kept = [l for l in lines if json.loads(l).get("issue") != ref]
++open(path, "w").write("\n".join(kept) + ("\n" if kept else ""))
++PYSUP
++          echo "ledger-reconciler: SUPERSEDED unpriced row for ${ref} with priced row"
++        else
++          echo "ledger-reconciler: appended ${ref}"
++        fi ;;
++    esac
+     mkdir -p "$(dirname "$FALCON_LEDGER_FILE")"
+     printf '%s\n' "$row" >> "$FALCON_LEDGER_FILE"
+     appended=$((appended + 1))
+-    echo "ledger-reconciler: appended ${ref}"
+   done
+ done
+ 
+diff --git a/scripts/tests/test_ledger_reconciler.sh b/scripts/tests/test_ledger_reconciler.sh
+index d04df93..480df64 100755
+--- a/scripts/tests/test_ledger_reconciler.sh
++++ b/scripts/tests/test_ledger_reconciler.sh
+@@ -79,6 +79,26 @@ bash "${SUT}" >/dev/null 2>&1
+ grep -q "matty-v/snapdex#41" "${FALCON_LEDGER_FILE}" && fail "#41 should be skipped" || pass "pre-cost-tracking issue skipped"
+ grep -q "matty-v/snapdex#43" "${FALCON_LEDGER_FILE}" && fail "PR #43 should be excluded" || pass "PR row excluded from issue list"
+ 
++# --- 4. unpriced row is superseded once rates can price it ------------------
++# Simulate the 2026-08-08 #995 state: an unpriced row already in the ledger.
++python3 - "$FALCON_LEDGER_FILE" <<'PYEOF'
++import json, sys
++rows = [json.loads(l) for l in open(sys.argv[1])]
++for r in rows:
++    if r["issue"] == "matty-v/snapdex#42":
++        r["totals"]["priced"] = False
++        r["totals"]["cost_usd"] = None
++open(sys.argv[1], "w").write("\n".join(json.dumps(r, sort_keys=True) for r in rows) + "\n")
++PYEOF
++OUT="$(bash "${SUT}" 2>/dev/null)"
++echo "$OUT" | grep -q "SUPERSEDED unpriced row for matty-v/snapdex#42" && pass "unpriced row superseded" || fail "supersede: $OUT"
++[ "$(grep -c 'snapdex#42' "${FALCON_LEDGER_FILE}")" = "1" ] && pass "single row after supersede" || fail "dup rows"
++grep -q '"priced": true' "${FALCON_LEDGER_FILE}" && pass "superseding row is priced" || fail "still unpriced"
++
++# --- 5. priced row is final: rerun does not touch it ------------------------
++bash "${SUT}" >/dev/null 2>&1
++[ "$(grep -c 'snapdex#42' "${FALCON_LEDGER_FILE}")" = "1" ] && pass "priced row final" || fail "priced row churned"
++
+ echo
+ echo "ledger-reconciler: ${PASS} passed, ${FAIL} failed"
+ [ "${FAIL}" -eq 0 ]

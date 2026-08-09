@@ -15,17 +15,18 @@ This project makes the team account for its own spending:
    posts a card to the issue's Discord thread: what's in scope, which agents
    are involved, and which AI model each one runs.
 2. **Each agent reports its own numbers.** At the end of its part of the
-   work, each agent measures what it used (by reading its own session log),
+   work, each agent measures what it used (by reading its own session log, via [`token-usage.sh`](docs/mirror/token-usage.sh)),
    posts a one-line summary to Discord, and attaches the detailed numbers to
    the GitHub issue in a form software can read back later.
 3. **A price tag on close.** When the issue is done, Lando adds up every
-   agent's numbers, converts them to dollars using published model prices,
-   posts the total to Discord, and appends a row to a running ledger file so
-   issues can be compared.
+   agent's numbers and converts them to dollars using published model prices
+   (via [`issue-cost.sh`](docs/mirror/issue-cost.sh)),
+   posts the total to Discord, and appends a row to a running ledger file
+   ([snapshot](docs/mirror/cost-ledger-snapshot.jsonl)) so issues can be compared.
 4. **A platform fix.** Building this exposed that Kyber's own usage metrics
    dropped "output" tokens entirely and priced cache writes at $0. I fixed it
    in [kyber#23](https://github.com/matty-v/kyber/pull/23) (released as
-   v1.0.1). It mattered here twice: the fix is why cache-write prices exist
+   [v1.0.1](https://github.com/matty-v/kyber/releases/tag/v1.0.1)). It mattered here twice: the fix is why cache-write prices exist
    in the price table the ledger uses (about 12% of every issue's bill), and
    it turned the platform's dashboard into a usable second opinion on the
    agents' self-reports. The token counts themselves never depended on it.
@@ -37,8 +38,8 @@ This project makes the team account for its own spending:
 | Piece | Repo | Link |
 |---|---|---|
 | Platform fix: output tokens + cache-write pricing | `matty-v/kyber` | [kyber#23](https://github.com/matty-v/kyber/pull/23) (merged) |
-| Agent self-reporting, team charter changes, price table | `matty-v/falcon-dev-common` | merged as fdc#118; private repo, all changes mirrored in [`docs/mirror/`](docs/mirror/) |
-| Lando: plan card, cost roll-up, ledger | `matty-v/lando-agent` | merged as lando-agent#105; private repo, mirrored in [`docs/mirror/`](docs/mirror/) |
+| Agent self-reporting, team charter changes, price table | `matty-v/falcon-dev-common` | merged as fdc#118; private repo, all changes mirrored in [`docs/mirror/`](docs/mirror/README.md) |
+| Lando: plan card, cost roll-up, ledger | `matty-v/lando-agent` | merged as lando-agent#105; private repo, mirrored in [`docs/mirror/`](docs/mirror/README.md) |
 | Experiment write-up | this repo | [`docs/experiments/cost-per-issue.md`](docs/experiments/cost-per-issue.md) |
 | Process log (every prompt, pushback, and AI mistake) | this repo | [`PROCESS.md`](PROCESS.md) |
 
@@ -95,22 +96,23 @@ Claude Code ran the whole build:
 The pattern that worked: the AI proposes with arithmetic, I redirect with
 judgment. Every instance is in [PROCESS.md](PROCESS.md). The single most
 repeated lesson: anything that must happen reliably belongs in a tested
-script, not in written instructions. The agents ran script commands 8 out of
+script, not in written instructions (example: [`charter-ensure.sh`](docs/mirror/charter-ensure.sh),
+which replaced instructions the agents skipped twice). The agents ran script commands 8 out of
 8 times; they skipped written procedures twice.
 
 ## Where the AI got things wrong
 
-The full list is in PROCESS.md ("Trial and error"). Highlights:
+The full list is in [PROCESS.md](PROCESS.md) ("Trial and error" section). Highlights:
 
 - Its first design for counting output tokens could miss work, double-count
   after gaps, and mistake new work for old. Its own reviewers caught all
   three; it was redesigned.
-- Its cost scripts shipped with an outdated price table that would have
+- Its cost scripts shipped with an outdated price table (caught in review, [patch](docs/mirror/falcon-dev-common-review-fixes.patch)) that would have
   silently cut every cost figure roughly in half.
 - It passed large data the wrong way and hit an operating-system limit in
-  production. One of my own agents diagnosed that bug from inside its pod.
+  production ([fix](docs/mirror/fdc-123.patch)). One of my own agents diagnosed that bug from inside its pod.
 - A cleanup job crashed silently for hours because its error messages went
-  where nobody looked.
+  where nobody looked ([the job](docs/mirror/ledger-reconciler.sh) now reports where its caller reads).
 - It once declared Discord broken based on a missing bookkeeping note, when
   the Discord thread existed all along. I corrected it by looking.
 
@@ -140,7 +142,8 @@ honest "unavailable" or "partial" in the records, never as a made-up number.
 ## What I'd do with more time
 
 - Run the second designed experiment: shrink the 140KB of team documentation
-  every agent re-reads, prediction already registered (8–12% savings).
+  every agent re-reads, prediction already registered
+  ([details](docs/experiments/cost-per-issue.md), 8–12% savings).
 - Give partial rows a proper minimum-cost figure instead of a footnote.
 - Fix the mid-task restart gap so readings stop getting lost.
 - Chase the next two levers the data points at: the number of API calls per

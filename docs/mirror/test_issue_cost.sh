@@ -186,6 +186,24 @@ PYEOF
 R="$("${SUT}" matty-v/snapdex#49 --metrics-json "${SBX}/metrics2.json")"
 echo "$R" | grep -q "excludes unpriced rows: claude-mystery" && pass "unpriced metrics rows labeled" || fail "unpriced label: $R"
 
+# --- E2BIG regression: a >256KB timeline must not kill discovery ------------
+# (Env-var payload passing died with E2BIG past the kernel's ~128KB per-string
+# limit — the 2026-08-08 reconciler death. Payloads now travel via files.)
+python3 - "$SBX" "$(usage_marker han s claude-sonnet-4-5 1000000 0 0 0 exact)" \
+  "$(usage_marker chewie merge-requested claude-sonnet-4-5 500000 0 0 0 exact)" <<'PYEOF'
+import json, os, sys
+sbx, han, chewie = sys.argv[1:4]
+g = lambda name, s: open(os.path.join(sbx, "gh", name), "w").write(s)
+pad = [{"event": "commented", "filler": "x" * 500} for _ in range(600)]  # ~300KB
+tl = pad + [{"event": "cross-referenced", "source": {"issue": {"number": 88, "pull_request": {},
+      "repository": {"full_name": "matty-v/snapdex"}}}}]
+g("repos_matty-v_snapdex_issues_50_timeline.json", json.dumps(tl))
+g("repos_matty-v_snapdex_issues_50_comments.json", json.dumps([{"body": han}]))
+g("repos_matty-v_snapdex_issues_50.json", json.dumps({"title": "t", "body": ""}))
+PYEOF
+R="$("${SUT}" matty-v/snapdex#50)"
+[[ "$(echo "$R" | jqget totals.tokens.input)" == "1500000" ]] && pass "300KB timeline survived (E2BIG regression)" || fail "e2big: $(echo "$R" | head -c 200)"
+
 echo
 echo "issue-cost: ${PASS} passed, ${FAIL} failed"
 [[ "${FAIL}" -eq 0 ]]

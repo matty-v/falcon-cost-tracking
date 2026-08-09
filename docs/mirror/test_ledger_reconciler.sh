@@ -79,6 +79,26 @@ bash "${SUT}" >/dev/null 2>&1
 grep -q "matty-v/snapdex#41" "${FALCON_LEDGER_FILE}" && fail "#41 should be skipped" || pass "pre-cost-tracking issue skipped"
 grep -q "matty-v/snapdex#43" "${FALCON_LEDGER_FILE}" && fail "PR #43 should be excluded" || pass "PR row excluded from issue list"
 
+# --- 4. unpriced row is superseded once rates can price it ------------------
+# Simulate the 2026-08-08 #995 state: an unpriced row already in the ledger.
+python3 - "$FALCON_LEDGER_FILE" <<'PYEOF'
+import json, sys
+rows = [json.loads(l) for l in open(sys.argv[1])]
+for r in rows:
+    if r["issue"] == "matty-v/snapdex#42":
+        r["totals"]["priced"] = False
+        r["totals"]["cost_usd"] = None
+open(sys.argv[1], "w").write("\n".join(json.dumps(r, sort_keys=True) for r in rows) + "\n")
+PYEOF
+OUT="$(bash "${SUT}" 2>/dev/null)"
+echo "$OUT" | grep -q "SUPERSEDED unpriced row for matty-v/snapdex#42" && pass "unpriced row superseded" || fail "supersede: $OUT"
+[ "$(grep -c 'snapdex#42' "${FALCON_LEDGER_FILE}")" = "1" ] && pass "single row after supersede" || fail "dup rows"
+grep -q '"priced": true' "${FALCON_LEDGER_FILE}" && pass "superseding row is priced" || fail "still unpriced"
+
+# --- 5. priced row is final: rerun does not touch it ------------------------
+bash "${SUT}" >/dev/null 2>&1
+[ "$(grep -c 'snapdex#42' "${FALCON_LEDGER_FILE}")" = "1" ] && pass "priced row final" || fail "priced row churned"
+
 echo
 echo "ledger-reconciler: ${PASS} passed, ${FAIL} failed"
 [ "${FAIL}" -eq 0 ]

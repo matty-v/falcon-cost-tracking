@@ -1,0 +1,229 @@
+commit 04cdb71bf4774fcb97a1d7cec2efe329ec99bff2
+Author: Matt Voget <matt.voget@gmail.com>
+Date:   Fri Aug 7 18:21:38 2026 -0600
+
+    feat(cost): deterministic ledger backstop on the reconciler cron (#122)
+    
+    Co-authored-by: Claude Fable 5 <noreply@anthropic.com>
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 08bd167..9900ee9 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -10,6 +10,12 @@ merges unless explicitly noted.
+ 
+ ## Unreleased
+ 
++- Add: **Ledger backstop** (2026-08-07) — `scripts/ledger-reconciler.sh` rides the
++  15-min reconciler cron (before its Discord guard) and deterministically writes
++  any missing `cost-ledger.jsonl` row for recently-closed issues with usage
++  markers. Born from the first live close-out (snapdex#995): Lando's Step 6b
++  detoured on a promotion-HOLD + freeze collision and the row was never written.
++  Idempotent; backstop rows omit the metrics cross-check.
+ - Change: **📊 OUTCOME bullet now carries the cache-read share** (2026-08-07) —
+   `• 📊 ~10.4M tokens (~87% cache reads) · sonnet`. A raw token total reads
+   scarier than the money it represents (97% of the first live report was
+diff --git a/CONTRACTS.md b/CONTRACTS.md
+index 16e65a5..08d8a16 100644
+--- a/CONTRACTS.md
++++ b/CONTRACTS.md
+@@ -677,6 +677,13 @@ report). Any `unavailable` stage forces `totals.priced:false`, `cost_usd:null`,
+ "cost: partial" card. The ledger row shape is documented in `lando-agent/skills/
+ process-worker-ack.md` Step 6b.
+ 
++**Backstop (added 2026-08-07):** Step 6b is the fast path, and Lando can detour (the first live
++close-out, snapdex#995, was skipped when the green-light collided with a promotion HOLD + global
++freeze). `scripts/ledger-reconciler.sh` — invoked from the summary reconciler's 15-min cron,
++BEFORE its Discord guard — deterministically writes any missing row for recently-closed issues
++that carry usage markers. Idempotent via the ledger itself; backstop rows omit the metrics
++cross-check (`metrics_check: null`).
++
+ ---
+ 
+ *Maintained by Dave (falcon-dev-common owner). Changes to any wire shape in §§1–7 are a
+diff --git a/scripts/discord-summary-reconciler.sh b/scripts/discord-summary-reconciler.sh
+index 97e3cca..6c56bee 100755
+--- a/scripts/discord-summary-reconciler.sh
++++ b/scripts/discord-summary-reconciler.sh
+@@ -39,6 +39,14 @@ gh_app() {
+ 
+ DP="${SCRIPT_ROOT}/scripts/discord-post.sh"
+ 
++# ---------------------------------------------------------------------------
++# Ledger backstop FIRST — before the Discord guard, because the cost ledger
++# (CONTRACTS §10.4) must not depend on Discord being provisioned. Rides this
++# same 15-min cron; independently idempotent. (Added 2026-08-07 after Lando's
++# Step 6b detoured on snapdex#995 and the row was never written.)
++# ---------------------------------------------------------------------------
++bash "${SCRIPT_ROOT}/scripts/ledger-reconciler.sh" || true
++
+ # ---------------------------------------------------------------------------
+ # Guard: if Discord is not provisioned, exit silently (not an error).
+ # ---------------------------------------------------------------------------
+diff --git a/scripts/ledger-reconciler.sh b/scripts/ledger-reconciler.sh
+new file mode 100755
+index 0000000..34dac86
+--- /dev/null
++++ b/scripts/ledger-reconciler.sh
+@@ -0,0 +1,71 @@
++#!/usr/bin/env bash
++# ledger-reconciler.sh — Deterministic backstop for the cost ledger
++# (CONTRACTS §10.4). Lando's Step 6b is the fast path; when Lando detours
++# (the 2026-08-07 snapdex#995 close-out was skipped when the smoke-test
++# green-light collided with a promotion HOLD + global freeze), this pass
++# writes the missing row. A cron script cannot detour — that is the point.
++#
++# Invoked from discord-summary-reconciler.sh's preamble BEFORE its Discord
++# guard (the ledger needs no Discord), so it rides the existing 15-min cron
++# with no agent-spec change. Idempotent: an issue already present in the
++# ledger is skipped; issues without usage markers (pre-cost-tracking) are
++# skipped. The metrics cross-check is omitted on the backstop path — the row
++# notes carry the self-report data only (metrics_check: null).
++#
++# Env overrides (tests): FALCON_GH_ISSUE, FALCON_LEDGER_FILE, AGENT_HOME,
++# FALCON_LOOKBACK_HOURS, FALCON_LEDGER_NO_GIT.
++
++set -uo pipefail
++
++: "${SCRIPT_ROOT:=$(cd "$(dirname "$0")/.." && pwd)}"
++: "${AGENT_HOME:=${HOME}/dev/lando-agent}"
++: "${FALCON_LEDGER_FILE:=${AGENT_HOME}/reports/cost-ledger.jsonl}"
++: "${FALCON_LOOKBACK_HOURS:=48}"
++
++GH="${FALCON_GH_ISSUE:-${SCRIPT_ROOT}/hooks/gh-issue.sh}"
++IC="${SCRIPT_ROOT}/scripts/issue-cost.sh"
++
++# In-scope repos — fixed allowlist, matches list-in-scope-repos.sh.
++REPOS=(kyber kyber-deploy holocron snapdex)
++
++since="$(date -u -d "-${FALCON_LOOKBACK_HOURS} hours" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
++      || date -u -v-"${FALCON_LOOKBACK_HOURS}"H +%Y-%m-%dT%H:%M:%SZ)"
++
++appended=0
++for repo in "${REPOS[@]}"; do
++  issues="$("$GH" api "repos/matty-v/${repo}/issues?state=closed&since=${since}&per_page=50" 2>/dev/null || echo '[]')"
++  nums="$(printf '%s' "$issues" | python3 -c '
++import json, sys
++try:
++    data = json.load(sys.stdin)
++except ValueError:
++    data = []
++for i in data if isinstance(data, list) else []:
++    # the issues endpoint returns PRs too — a PR row carries "pull_request"
++    if isinstance(i, dict) and "pull_request" not in i and i.get("number"):
++        print(i["number"])' 2>/dev/null || true)"
++  for num in $nums; do
++    ref="matty-v/${repo}#${num}"
++    # Idempotency: the ledger itself is the ledger of what has been ledgered.
++    grep -qs "\"issue\": \"${ref}\"" "$FALCON_LEDGER_FILE" 2>/dev/null && continue
++    comments="$("$GH" api "repos/matty-v/${repo}/issues/${num}/comments" --paginate 2>/dev/null || true)"
++    printf '%s' "$comments" | grep -q "falcon:usage:v1" || continue  # pre-cost-tracking issue
++    row="$(FALCON_GH_ISSUE="$GH" bash "$IC" "$ref" 2>/dev/null || true)"
++    if [ -z "$row" ]; then
++      echo "ledger-reconciler: WARN aggregation failed for ${ref}" >&2
++      continue
++    fi
++    mkdir -p "$(dirname "$FALCON_LEDGER_FILE")"
++    printf '%s\n' "$row" >> "$FALCON_LEDGER_FILE"
++    appended=$((appended + 1))
++    echo "ledger-reconciler: appended ${ref}"
++  done
++done
++
++if [ "$appended" -gt 0 ] && [ -d "${AGENT_HOME}/.git" ] && [ -z "${FALCON_LEDGER_NO_GIT:-}" ]; then
++  git -C "$AGENT_HOME" add "$(realpath "$FALCON_LEDGER_FILE" 2>/dev/null || echo reports/cost-ledger.jsonl)" 2>/dev/null || true
++  git -C "$AGENT_HOME" commit -q -m "ledger-reconciler: backstop row(s) for ${appended} issue(s)" || true
++  git -C "$AGENT_HOME" push -q || echo "ledger-reconciler: WARN push failed (rows committed locally)" >&2
++fi
++
++exit 0
+diff --git a/scripts/tests/test_ledger_reconciler.sh b/scripts/tests/test_ledger_reconciler.sh
+new file mode 100755
+index 0000000..d04df93
+--- /dev/null
++++ b/scripts/tests/test_ledger_reconciler.sh
+@@ -0,0 +1,84 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++# test_ledger_reconciler.sh — unit tests for scripts/ledger-reconciler.sh.
++# Stubs the gh wrapper (FALCON_GH_ISSUE) with canned responses; asserts the
++# backstop appends a row for a closed issue with usage markers, is idempotent,
++# and skips pre-cost-tracking issues. No network, no git (FALCON_LEDGER_NO_GIT).
++
++SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
++SUT="${ROOT}/scripts/ledger-reconciler.sh"
++
++PASS=0; FAIL=0
++pass() { echo "[PASS] $*"; PASS=$((PASS + 1)); }
++fail() { echo "[FAIL] $*"; FAIL=$((FAIL + 1)); }
++
++SBX="$(mktemp -d)"
++mkdir -p "${SBX}/gh"
++
++cat > "${SBX}/rates.yaml" <<'EOF'
++claude-opus-5:
++    input: 5
++    output: 25
++    cache_read: 0.5
++    cache_creation: 6.25
++EOF
++printf 'source: litellm\nupstream_commit: b45b4b7300000000\nfetched_at: 2026-08-07T21:20:54Z\n' > "${SBX}/rates.meta"
++export FALCON_RATES_FILE="${SBX}/rates.yaml"
++export FALCON_RATES_META="${SBX}/rates.meta"
++export FALCON_GH_ISSUE="${SBX}/gh-stub.sh"
++export FALCON_LEDGER_FILE="${SBX}/ledger.jsonl"
++export AGENT_HOME="${SBX}/not-a-git-repo"
++export FALCON_LEDGER_NO_GIT=1
++
++# input 0.1M*5 + output 40k*25 + cache_read 10M*0.5 + cache_creation 0.4M*6.25
++# = 0.5 + 1.0 + 5.0 + 2.5 = $9.00 exactly.
++MARKER='<!-- falcon:usage:v1 {"v":1,"agent":"han","envelope_id":"e-1","stage_label":"ready-for-implementation","issue":"matty-v/snapdex#42","window":{"from":"2026-08-07T10:00:00Z","to":"2026-08-07T11:00:00Z"},"models":{"claude-opus-5":{"input":100000,"output":40000,"cache_read":10000000,"cache_creation":400000,"api_calls":40}},"charter_variant":"full@abc1234","quality":"exact","reason":null} -->'
++
++python3 - "$SBX" "$MARKER" <<'PYEOF'
++import json, os, sys
++sbx, marker = sys.argv[1], sys.argv[2]
++san = lambda p: p.replace("/", "_")
++g = lambda p, obj: json.dump(obj, open(os.path.join(sbx, "gh", san(p) + ".json"), "w"))
++g("repos/matty-v/snapdex/issues/42/comments", [{"body": marker}])
++g("repos/matty-v/snapdex/issues/42", {"title": "night-theme contrast", "body": ""})
++g("repos/matty-v/snapdex/issues/41/comments", [{"body": "just a human comment"}])
++PYEOF
++
++# Stub: prefix-match the closed-issues list (its ?since= value varies per run);
++# exact-match everything else from canned files; 404 otherwise (e.g. timeline —
++# exercises issue-cost.sh's discovery-unavailable fallback).
++cat > "${SBX}/gh-stub.sh" <<EOF
++#!/usr/bin/env bash
++p="\$2"
++case "\$p" in
++  repos/matty-v/snapdex/issues\?state=closed*)
++    printf '[{"number":42},{"number":41},{"number":43,"pull_request":{}}]' ;;
++  repos/matty-v/*/issues\?state=closed*)
++    printf '[]' ;;
++  *)
++    f="${SBX}/gh/\$(echo "\$p" | tr '/' '_').json"
++    [ -r "\$f" ] && cat "\$f" || { echo "stub 404: \$p" >&2; exit 1; } ;;
++esac
++EOF
++chmod +x "${SBX}/gh-stub.sh"
++
++# --- 1. appends a priced row for the marker-bearing closed issue ------------
++OUT="$(bash "${SUT}" 2>/dev/null)"
++echo "$OUT" | grep -q "appended matty-v/snapdex#42" && pass "row appended for #42" || fail "append: $OUT"
++[ "$(wc -l < "${FALCON_LEDGER_FILE}" | tr -d ' ')" = "1" ] && pass "exactly one row" || fail "rows: $(cat "${FALCON_LEDGER_FILE}" 2>/dev/null)"
++grep -q '"issue": "matty-v/snapdex#42"' "${FALCON_LEDGER_FILE}" && pass "row names the issue" || fail "row content"
++grep -q '"cost_usd": 9.0,' "${FALCON_LEDGER_FILE}" && pass "row priced \$9.00" || fail "pricing: $(cat "${FALCON_LEDGER_FILE}")"
++
++# --- 2. idempotent: second run appends nothing ------------------------------
++bash "${SUT}" >/dev/null 2>&1
++[ "$(wc -l < "${FALCON_LEDGER_FILE}" | tr -d ' ')" = "1" ] && pass "idempotent rerun" || fail "idempotency: $(wc -l < "${FALCON_LEDGER_FILE}")"
++
++# --- 3. marker-less issue and PR both skipped -------------------------------
++grep -q "matty-v/snapdex#41" "${FALCON_LEDGER_FILE}" && fail "#41 should be skipped" || pass "pre-cost-tracking issue skipped"
++grep -q "matty-v/snapdex#43" "${FALCON_LEDGER_FILE}" && fail "PR #43 should be excluded" || pass "PR row excluded from issue list"
++
++echo
++echo "ledger-reconciler: ${PASS} passed, ${FAIL} failed"
++[ "${FAIL}" -eq 0 ]

@@ -80,7 +80,7 @@ recommendation for the first time:
    tracking to be truthful, not a good first test subject for it.
 2. **Live runs** → small batch, ~3 issues per experiment arm (the team shares one
    Anthropic account spend cap; a big batch can exhaust it).
-3. **Ledger home** → `lando-agent/reports/cost-ledger.jsonl`, next to Lando's
+3. **Ledger home** → [`lando-agent/reports/cost-ledger.jsonl`](docs/mirror/cost-ledger-snapshot.jsonl), next to Lando's
    existing committed ship reports.
 
 Claude then launched two parallel design subagents: one for the team-layer
@@ -97,7 +97,7 @@ first act of implementation — which is the document you are reading.
 
 The two designs landed:
 
-- **Team layer**: a new `token-usage.sh` in falcon-dev-common that each worker
+- **Team layer**: a new [`token-usage.sh`](docs/mirror/token-usage.sh) in falcon-dev-common that each worker
   runs at stage pickup and completion — it sums finalized assistant entries
   across the agent's own transcript tree (deduplicated by message id, skipping
   still-streaming entries, whole-tree scan so transcript rotation is harmless)
@@ -141,13 +141,13 @@ Claude delegated the kyber fix (Phase 1) to a background implementation agent
 with the full file-level design (branch `fix/output-token-cost`, no push until I
 review), and built the team layer (Phase 2) in the foreground:
 
-- **`scripts/token-usage.sh`** (falcon-dev-common) — the per-stage self-report.
+- **[`token-usage.sh`](docs/mirror/token-usage.sh)** (falcon-dev-common) — the per-stage self-report.
   Wrote it plus an 18-case test suite. The tests immediately caught one real
   bug: the filename sanitizer used `echo`, whose trailing newline got translated
   into a stray `_` in the baseline filename. Worth noting: the AI wrote both the
   bug and the test that caught it — the value of insisting on tests for "simple"
   shell scripts.
-- **`scripts/issue-cost.sh`** — Lando's close-path aggregator (collect markers →
+- **[`issue-cost.sh`](docs/mirror/issue-cost.sh)** — Lando's close-path aggregator (collect markers →
   price from the vendored rate snapshot → cross-check metrics → emit the ledger
   row). 17-case suite covering the truthfulness ladder (`exact` / `lower_bound` /
   `unavailable`), unpriced-model handling (never $0.00), date-suffix rate lookup,
@@ -161,7 +161,7 @@ review), and built the team layer (Phase 2) in the foreground:
   the single chartered 📊 ban-list carve-out in `discord-post.md`,
   `config/team-roster.yaml`, the rates snapshot copy, `VARIANT`, CHANGELOG.
 - Lando skill edits: Step 1.7 mini-charter (marker + 🧭 card), Step 6b rewired
-  to call `issue-cost.sh`, append the ledger, and derive all card/DM cost lines
+  to call [`issue-cost.sh`](docs/mirror/issue-cost.sh), append the ledger, and derive all card/DM cost lines
   from the ledger row (the metrics API demoted from source-of-truth to labeled
   cross-check). Claude caught its own dangling `$PR_NUMBERS` reference during
   review and added the missing derivation.
@@ -172,7 +172,7 @@ review), and built the team layer (Phase 2) in the foreground:
   the scripts + full patches into `docs/mirror/` here, since reviewers can't see
   the private repos.
 
-### Session 1, continued — the kyber PR lands ([kyber#23](https://github.com/matty-v/kyber/pull/23))
+### Session 1, continued — the kyber PR lands ([[kyber#23](https://github.com/matty-v/kyber/pull/23)](https://github.com/matty-v/kyber/pull/23))
 
 The background implementation agent finished the platform fix: output tokens
 wired end-to-end (parser → snapshot → accumulator → delta → windowed series →
@@ -199,13 +199,13 @@ Human/AI interaction notes for this phase:
 Phase 1 + Phase 2 are now code-complete. What remains needs the LIVE system and
 me in the loop (the pipeline's approval gates are mine by design): merge fdc +
 lando-agent branches, fan out the vendor re-pin to the 8 agent repos, merge +
-release kyber#23, then the scratch-issue E2E run and the two experiment arms.
+release [kyber#23](https://github.com/matty-v/kyber/pull/23), then the scratch-issue E2E run and the two experiment arms.
 
 ## Session 2 — "review, fix, and then merge the 3 branches"
 
 My prompt: exactly that, one line. Claude ran three independent adversarial
 reviews in parallel — two custom review agents on the private-repo branches and
-the code-review tooling on kyber#23 (whose first run targeted the wrong branch
+the code-review tooling on [kyber#23](https://github.com/matty-v/kyber/pull/23) (whose first run targeted the wrong branch
 and had to be redone — noted honestly: the tool reviewed the checked-out docs
 branch instead of the PR).
 
@@ -245,12 +245,12 @@ being fixed (several were reproduced with actual commands, not just argued):
 vendored scripts don't exist at the current vendor pin (merge-ordering gate —
 resolved by fdc's auto fan-out workflow); PR numbers were sourced from a
 pipeline field the repo's own docs call usually-unwritten, which would silently
-drop review/deploy-stage tokens (fixed properly in `issue-cost.sh`: linked PRs
+drop review/deploy-stage tokens (fixed properly in [`issue-cost.sh`](docs/mirror/issue-cost.sh): linked PRs
 are now auto-discovered from the issue timeline); the eval card block broke on
 apostrophes and null counts (now shlex-quoted + coerced, exercised against
 adversarial rows); a charter-variant format ambiguity.
 
-**kyber#23 (10 findings, 8 CONFIRMED):** the harshest and best. The top four
+**[kyber#23](https://github.com/matty-v/kyber/pull/23) (10 findings, 8 CONFIRMED):** the harshest and best. The top four
 showed my approved per-message output design was structurally lossy: only the
 last message per 30s reporter tick was counted (busy agents lose most output),
 the dedup tuple depended on a 5-minute-TTL cache (double-counts after any gap),
@@ -275,7 +275,7 @@ undercount got a named regression test. I reviewed the tracker and delta hunks
 directly before pushing.
 
 Merged, in dependency order:
-1. **kyber#23** (squash → `9b1a3d5`) after CI went green.
+1. **[kyber#23](https://github.com/matty-v/kyber/pull/23)** (squash → `9b1a3d5`) after CI went green.
 2. **falcon-dev-common#118** (→ `2698293`), which auto-triggered the vendor
    fan-out workflow — vendor-bump PRs opened in all 8 agent identity repos and
    auto-merged, so the whole fleet is pinned to the cost-tracking contract.
@@ -288,7 +288,7 @@ Still ahead of the live E2E: a kyber release so the deployed control plane
 actually serves output-token costs (CI never deploys; ArgoCD does), and pod
 session restarts so running agents pick up the re-linked skills.
 
-### Session 2, continued — cutting release v1.0.1
+### Session 2, continued — cutting release [v1.0.1](https://github.com/matty-v/kyber/releases/tag/v1.0.1)
 
 My prompt: "kick off the release and let me know when it's ready to deploy to
 the kyber cluster where the falcon dev team is running." Claude read the
@@ -309,11 +309,11 @@ My question surfaced a real bug before it answered anything: while verifying
 what to check, Claude found the vendor fan-out workflow replaces the vendored
 bundle but never updates `vendor/falcon-dev-common-version` — so every agent
 repo's pin file was lying (`9c63b54` while the bundle is `2698293`), and that
-stale sha is exactly what `token-usage.sh` stamps into every usage report's
+stale sha is exactly what [`token-usage.sh`](docs/mirror/token-usage.sh) stamps into every usage report's
 `charter_variant`. The same pass found the fan-out's trigger paths were
 missing `CONTRACTS.md`, `config/**`, and `VARIANT` — meaning a rates refresh
 or an experiment variant flip would silently not propagate to the fleet.
-Both fixed in fdc#119 + a corrective workflow_dispatch to repair the 8 stale
+Both fixed in [fdc#119](docs/mirror/fdc-119.patch) + a corrective workflow_dispatch to repair the 8 stale
 pins. Lesson recorded: "how do I verify X" questions are bug-finders — the
 verification artifact itself was broken.
 
@@ -369,7 +369,7 @@ precisely why the pipeline tracks four token types instead of one number, and
 why kyber's last-message sampling (context semantics) can never be the spend
 source. My misread is itself a UX finding: the Discord 📊 bullet's raw token
 count reads scarier than the money it represents — a format tweak was agreed and shipped
-same-session (fdc#121): the bullet now carries the cache-read share —
+same-session ([fdc#121](docs/mirror/fdc-121.patch)): the bullet now carries the cache-read share —
 `• 📊 ~10.4M tokens (~87% cache reads) · sonnet` — fixing the misread without
 moving pricing into workers' hands (Lando still owns the $).
 
@@ -396,14 +396,14 @@ accounting never ran. Diagnosis was clean because the monitor asserted the
 ledger row explicitly instead of assuming close == done.
 
 Two responses, both same-session:
-1. **Verified the math independently**: ran `issue-cost.sh` locally (read-only)
+1. **Verified the math independently**: ran [`issue-cost.sh`](docs/mirror/issue-cost.sh) locally (read-only)
    against the live markers — it found all 8 segments including both PR-side
    reports via timeline auto-discovery (no --pr hints), priced the issue at
    **$28.19**, and honestly flagged that the charter variant rolled THREE times
    mid-issue (the fleet's vendor bumps were landing while the issue was in
    flight). The aggregator is correct; only the trigger failed.
-2. **Closed the gap structurally** (fdc#122): a deterministic
-   `ledger-reconciler.sh` riding the existing 15-min cron — invoked BEFORE the
+2. **Closed the gap structurally** ([fdc#122](docs/mirror/fdc-122.patch)): a deterministic
+   [`ledger-reconciler.sh`](docs/mirror/ledger-reconciler.sh) riding the existing 15-min cron — invoked BEFORE the
    summary reconciler's Discord guard, because the ledger must not depend on
    Discord — idempotently writing any missing row for recently-closed issues
    with usage markers. An LLM orchestrator can detour; a cron script cannot.
@@ -413,7 +413,7 @@ Two responses, both same-session:
 Correction from Matt watching Discord directly: the thread EXISTED — the
 mirror works; only the charter card was missing (and the body marker my check
 grepped for). So the single confirmed gap was the kickoff-only charter path,
-now closed structurally: lando-agent#111 adds dispatch Step 5c, an
+now closed structurally: [lando-agent#111](docs/mirror/lando-agent-charter-backstop.patch) adds dispatch Step 5c, an
 open-if-missing charter backstop (mid-pipeline entries list remaining stages
 only — usage reports remain the record of what already happened). Lesson
 logged: I asserted 'Discord broken' from an absent marker; the human's direct
@@ -430,7 +430,7 @@ dev team. Root cause: I passed the paginated issue timeline to python via an
 environment variable; the kernel caps a single env string at ~128KB and kills
 the exec with E2BIG. And per my own reconciler design — warnings to stderr,
 exit 0 — the failure was invisible to the cron report. Two lessons shipped as
-fdc#123: large payloads travel via temp files everywhere (the same latent
+[fdc#123](docs/mirror/fdc-123.patch): large payloads travel via temp files everywhere (the same latent
 pattern existed in token-usage.sh's recovery and scan paths), and backstop
 warnings print to stdout because a warning nobody can see is not a warning.
 55 tests green including a 300KB-timeline E2BIG regression case.
@@ -443,7 +443,7 @@ stages, 37M tokens. But unpriced: `model claude-opus-5 has no rate` and
 `rates_provenance: unknown@unknown` — the rates file wasn't readable in
 Lando's pod, cause TBD (locally the same aggregation prices $28.19). That
 exposed one more design flaw worth its own entry: the backstop was
-append-once, so an unpriced row could never heal. fdc#124 makes priced rows
+append-once, so an unpriced row could never heal. [fdc#124](docs/mirror/fdc-124.patch) makes priced rows
 final while unpriced rows retry and supersede in place (git history keeps
 the original), and unpriced appends now self-diagnose whether the rates file
 was readable. The running theme of this whole phase: every failure mode the
@@ -482,12 +482,12 @@ structurally low.
 
 The baseline arm opened with snapdex#997 (grouped admin nav — comparable PWA
 work to #995). Two stage reports landed cleanly — but the mini-charter never
-appeared, even though the dispatch backstop (lando#111) was in Lando's tree:
+appeared, even though the dispatch backstop ([lando#111](docs/mirror/lando-agent-charter-backstop.patch)) was in Lando's tree:
 **the prose procedure was skipped on two consecutive dispatches**, while every
 script invocation in the pipeline has been followed 8/8. That settles the
 pattern this project keeps re-learning: instructions that ARE a command get
 executed; instructions that DESCRIBE a procedure get improvised away. Fix
-(lando-agent#114): `charter-ensure.sh` — idempotent, open-if-missing,
+([lando-agent#114](docs/mirror/lando-agent-charter-script.patch)): [`charter-ensure.sh`](docs/mirror/charter-ensure.sh) — idempotent, open-if-missing,
 never-blocking, dry-run-verified against the live issue — and both Lando
 skills now just run it. Placed in lando-agent rather than falcon-dev-common
 deliberately: the worker vendor bundle stays frozen mid-experiment, so the
@@ -504,7 +504,7 @@ pre-build "thinking" overhead — the lite variant's target. Two honest
 `unavailable` holes (mid-stage session recycles beating the one-shot baseline
 comment) are excluded as floors and drove a queued post-freeze fix
 (verify-and-retry baseline posting). Full analysis:
-docs/experiments/charter-size.md.
+[docs/experiments/cost-per-issue.md](docs/experiments/cost-per-issue.md).
 
 ### Session 3, continued — the experiment pivots to the bigger lever
 

@@ -1,0 +1,39 @@
+commit cd905903d8ffd75f681847189e82791090084049
+Author: Matt Voget <matt.voget@gmail.com>
+Date:   Fri Aug 7 18:28:30 2026 -0600
+
+    feat(cost): dispatch-time mini-charter backstop (Step 5c) (#111)
+    
+    Step 1.7 only fires on issues.opened kickoffs — issues entering the pipeline
+    mid-life (label events, recovery, pre-restart issues like snapdex#995) never
+    got a charter and their ledger rows carried planned:null. Dispatch now
+    ensures the marker exists, open-if-missing, non-blocking.
+    
+    Co-authored-by: Claude Fable 5 <noreply@anthropic.com>
+
+diff --git a/skills/dispatch.md b/skills/dispatch.md
+index 0dbe62ca..61e25963 100644
+--- a/skills/dispatch.md
++++ b/skills/dispatch.md
+@@ -518,6 +518,21 @@ Discord failure here (network error, unset webhook) is non-blocking: the `|| tru
+ 
+ </details>
+ 
++### 5c — Mini-charter backstop (cost tracking, CONTRACTS §10.3)
++
++**When `issue_ref` is present**, check the issue body for a `<!-- falcon:charter:v1` marker
++(you already read the body in earlier steps for grounding; a cached read is fine). If it is
++ABSENT, create the mini-charter NOW — marker on the issue body + 🧭 Team-plan card in the
++thread — exactly per `process-github-event.md` Step 1.7. This is the deterministic
++open-if-missing backstop (mirrors the release-thread pattern): Step 1.7 only fires on
++`issues.opened` kickoffs, so issues that enter the pipeline mid-life — label events, stall
++recovery, priority:asap, anything predating a session restart — would otherwise never get a
++charter, and their ledger rows would carry `planned: null` (the 2026-08-07 snapdex#995 gap).
++For the `planned` crew on a mid-pipeline backstop, list the remaining expected stages from the
++CURRENT stage_label forward — don't reconstruct history; the usage reports are the record of
++what already happened. Non-blocking on failure (log + proceed to Step 6); never edit an
++existing charter marker.
++
+ ---
+ 
+ ## Step 6 — Update GitHub labels
