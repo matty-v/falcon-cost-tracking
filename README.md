@@ -9,6 +9,36 @@ AI agents. The team ships real software and spends real money on one shared
 API account. Before this project I could not answer the most basic question
 about it: **what does an issue cost?**
 
+## How the team works an issue
+
+Lando (the team lead) receives every GitHub event and routes each handoff.
+Double arrows mark where work gets sent back.
+
+```mermaid
+flowchart TD
+    issue([GitHub issue opened]) --> lando
+
+    lando["🎯 <b>Lando</b> · team lead<br>routes every handoff; agents report back to him<br><i>runs charter-ensure.sh: posts the plan card</i>"]
+
+    lando --> yoda1["🔎 <b>Yoda</b> · triage<br>real issue? how big?"]
+    yoda1 --> obiwan["🏛 <b>Obi-wan</b> · design<br>decides how to build it"]
+    obiwan <--> yoda2["⚖️ <b>Yoda</b> · challenge<br>rejects weak specs"]
+    yoda2 --> ackbar1["🚀 <b>Ackbar</b> · deploy check<br>safe to ship?"]
+    ackbar1 --> matt["👤 <b>Matt</b> · human approval gate"]
+    matt --> build["🔨 <b>Han / Luke</b> · build<br>writes the fix, opens the PR"]
+    build <--> chewie["🔍 <b>Chewie</b> · review<br>rejects bad builds"]
+    chewie --> merged([PR merged])
+    merged --> ackbar2["🚀 <b>Ackbar</b> · deploy to production"]
+    ackbar2 --> smoke["🧪 <b>Chewie</b> · smoke test on the live site"]
+    smoke --> close["🎯 <b>Lando</b> · close-out<br><i>runs issue-cost.sh: prices the issue,<br>posts the total, writes the ledger row</i>"]
+```
+
+Cost tracking rides the whole path: **every agent runs
+[`token-usage.sh`](docs/mirror/token-usage.sh) twice per stage**, once at
+pickup (an odometer reading of its session) and once at completion (posting
+what its stage used and on which model). Those reports are what Lando adds up
+at the end with [`issue-cost.sh`](docs/mirror/issue-cost.sh).
+
 ## An Experiment in Model Cost versus Quality
 
 Baseline: all eight agents on the premium model (claude-opus-5), 4 live
