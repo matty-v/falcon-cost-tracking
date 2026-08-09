@@ -17,31 +17,7 @@ boxes run the cheaper claude-sonnet-5. This is the placement the experiment
 landed on. Lando (the team lead) receives every GitHub event and routes each
 handoff. Double arrows mark where work gets sent back.
 
-```mermaid
-flowchart TD
-    issue([GitHub issue opened]) --> lando
-
-    lando["🎯 <b>Lando</b> · team lead<br>routes every handoff; agents report back to him<br><i>runs charter-ensure.sh: posts the plan card</i><br>pod · Claude Code · sonnet-5"]
-
-    lando --> yoda1["🔎 <b>Yoda</b> · triage<br>real issue? how big?<br>pod · Claude Code · sonnet-5"]
-    yoda1 --> obiwan["🏛 <b>Obi-wan</b> · design<br>decides how to build it<br>pod · Claude Code · opus-5"]
-    obiwan <--> yoda2["⚖️ <b>Yoda</b> · challenge<br>rejects weak specs<br>pod · Claude Code · sonnet-5"]
-    yoda2 --> ackbar1["🚀 <b>Ackbar</b> · deploy check<br>safe to ship?<br>pod · Claude Code · sonnet-5"]
-    ackbar1 --> matt["👤 <b>Matt</b> · human approval gate"]
-    matt --> build["🔨 <b>Han / Luke</b> · build<br>writes the fix, opens the PR<br>pods · Claude Code · sonnet-5"]
-    build <--> chewie["🔍 <b>Chewie</b> · review<br>rejects bad builds<br>pod · Claude Code · opus-5"]
-    chewie --> merged([PR merged])
-    merged --> ackbar2["🚀 <b>Ackbar</b> · deploy to production<br>pod · Claude Code · sonnet-5"]
-    ackbar2 --> smoke["🧪 <b>Chewie</b> · smoke test on the live site<br>pod · Claude Code · opus-5"]
-    smoke --> close["🎯 <b>Lando</b> · close-out<br><i>runs issue-cost.sh: prices the issue,<br>posts the total, writes the ledger row</i><br>pod · Claude Code · sonnet-5"]
-
-    classDef premium fill:#f3e2b3,stroke:#b8860b,color:#1f2328
-    classDef economy fill:#cfe3f7,stroke:#4a7ba6,color:#1f2328
-    classDef human fill:#e2d9f3,stroke:#6f42c1,color:#1f2328
-    class obiwan,chewie,smoke premium
-    class lando,yoda1,yoda2,ackbar1,build,ackbar2,close economy
-    class matt human
-```
+<img src="docs/assets/team-flow.svg" width="100%" alt="How the team works an issue: GitHub issue flows through triage, design, challenge, deploy check, human approval, build, review, deploy, smoke test, and close-out, snaking across three rows. Gold boxes run the premium model at the judgment gates; blue boxes run the cheaper model; dashed red arrows mark work sent back.">
 
 Cost tracking rides the whole path: **every agent runs
 [`token-usage.sh`](docs/mirror/token-usage.sh) twice per stage**, once at

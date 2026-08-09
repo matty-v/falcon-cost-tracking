@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1410 635" font-family="-apple-system,'Segoe UI',Helvetica,Arial,sans-serif">
+<rect width="1410" height="635" rx="16" fill="#fbfcfe"/>
+<defs><marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#8296ad"/></marker><marker id="r" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#d1553f"/></marker><filter id="s" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#1f2933" flood-opacity="0.18"/></filter></defs>
+<line x1="350" y1="110.0" x2="415" y2="110.0" stroke="#8296ad" stroke-width="4" marker-end="url(#a)"/>
+<line x1="670" y1="110.0" x2="735" y2="110.0" stroke="#8296ad" stroke-width="4" marker-end="url(#a)"/>
+<line x1="990" y1="110.0" x2="1055" y2="110.0" stroke="#8296ad" stroke-width="4" marker-end="url(#a)"/>
+<line x1="1060" y1="300.0" x2="995" y2="300.0" stroke="#8296ad" stroke-width="4" marker-end="url(#a)"/>
+<line x1="740" y1="300.0" x2="675" y2="300.0" stroke="#8296ad" stroke-width="4" marker-end="url(#a)"/>
+<line x1="420" y1="300.0" x2="355" y2="300.0" stroke="#8296ad" stroke-width="4" marker-end="url(#a)"/>
+<line x1="350" y1="490.0" x2="415" y2="490.0" stroke="#8296ad" stroke-width="4" marker-end="url(#a)"/>
+<line x1="670" y1="490.0" x2="735" y2="490.0" stroke="#8296ad" stroke-width="4" marker-end="url(#a)"/>
+<line x1="990" y1="490.0" x2="1055" y2="490.0" stroke="#8296ad" stroke-width="4" marker-end="url(#a)"/>
+<path d="M 1310 110.0 H 1340 A 22 22 0 0 1 1362 132.0 V 278.0 A 22 22 0 0 1 1340 300.0 H 1318" fill="none" stroke="#8296ad" stroke-width="5" marker-end="url(#a)"/>
+<path d="M 100 300.0 H 70 A 22 22 0 0 0 48 322.0 V 468.0 A 22 22 0 0 0 70 490.0 H 92" fill="none" stroke="#8296ad" stroke-width="5" marker-end="url(#a)"/>
+<line x1="1185.0" y1="235" x2="1185.0" y2="175" stroke="#d1553f" stroke-width="2.5" stroke-dasharray="7 5" marker-end="url(#r)"/>
+<text x="1173.0" y="209.0" text-anchor="end" font-size="12" font-style="italic" font-weight="600" fill="#d1553f">spec rejected</text>
+<line x1="225.0" y1="425" x2="225.0" y2="365" stroke="#d1553f" stroke-width="2.5" stroke-dasharray="7 5" marker-end="url(#r)"/>
+<text x="237.0" y="399.0" text-anchor="start" font-size="12" font-style="italic" font-weight="600" fill="#d1553f">build rejected</text>
+<rect x="100" y="50" width="250" height="120" rx="60" fill="#5f9e6e" stroke="#4c8259" stroke-width="1.5" filter="url(#s)"/>
+<text x="225.0" y="96" text-anchor="middle" font-size="15" font-weight="700" fill="#ffffff">📥 GitHub issue opened</text>
+<text x="225.0" y="119" text-anchor="middle" font-size="12" fill="#e4f2e8">a bug or feature request lands</text>
+<rect x="420" y="50" width="250" height="120" rx="12" fill="#e8f1fb" stroke="#7fa8cf" stroke-width="1.5" filter="url(#s)"/>
+<text x="545.0" y="84" text-anchor="middle" font-size="15" font-weight="700" fill="#24292f">🎯 Lando · team lead</text>
+<text x="545.0" y="107" text-anchor="middle" font-size="12" fill="#57606a">posts the plan card, routes all work</text>
+<rect x="452.0" y="124" width="186" height="26" rx="13" fill="#ffffff" stroke="#7fa8cf" stroke-width="1"/>
+<text x="545.0" y="141" text-anchor="middle" font-size="11" font-weight="600" fill="#44546a">pod · Claude Code · sonnet-5</text>
+<rect x="740" y="50" width="250" height="120" rx="12" fill="#e8f1fb" stroke="#7fa8cf" stroke-width="1.5" filter="url(#s)"/>
+<text x="865.0" y="84" text-anchor="middle" font-size="15" font-weight="700" fill="#24292f">🔎 Yoda · triage</text>
+<text x="865.0" y="107" text-anchor="middle" font-size="12" fill="#57606a">real issue? how big?</text>
+<rect x="772.0" y="124" width="186" height="26" rx="13" fill="#ffffff" stroke="#7fa8cf" stroke-width="1"/>
+<text x="865.0" y="141" text-anchor="middle" font-size="11" font-weight="600" fill="#44546a">pod · Claude Code · sonnet-5</text>
+<rect x="1060" y="50" width="250" height="120" rx="12" fill="#fdf3d7" stroke="#e0b64b" stroke-width="1.5" filter="url(#s)"/>
+<text x="1185.0" y="84" text-anchor="middle" font-size="15" font-weight="700" fill="#24292f">🏛 Obi-wan · design</text>
+<text x="1185.0" y="107" text-anchor="middle" font-size="12" fill="#57606a">decides how to build it</text>
+<rect x="1092.0" y="124" width="186" height="26" rx="13" fill="#ffffff" stroke="#e0b64b" stroke-width="1"/>
+<text x="1185.0" y="141" text-anchor="middle" font-size="11" font-weight="600" fill="#44546a">pod · Claude Code · opus-5</text>
+<rect x="1060" y="240" width="250" height="120" rx="12" fill="#e8f1fb" stroke="#7fa8cf" stroke-width="1.5" filter="url(#s)"/>
+<text x="1185.0" y="274" text-anchor="middle" font-size="15" font-weight="700" fill="#24292f">⚖️ Yoda · challenge</text>
+<text x="1185.0" y="297" text-anchor="middle" font-size="12" fill="#57606a">rejects weak specs</text>
+<rect x="1092.0" y="314" width="186" height="26" rx="13" fill="#ffffff" stroke="#7fa8cf" stroke-width="1"/>
+<text x="1185.0" y="331" text-anchor="middle" font-size="11" font-weight="600" fill="#44546a">pod · Claude Code · sonnet-5</text>
+<rect x="740" y="240" width="250" height="120" rx="12" fill="#e8f1fb" stroke="#7fa8cf" stroke-width="1.5" filter="url(#s)"/>
+<text x="865.0" y="274" text-anchor="middle" font-size="15" font-weight="700" fill="#24292f">🚀 Ackbar · deploy check</text>
+<text x="865.0" y="297" text-anchor="middle" font-size="12" fill="#57606a">safe to ship?</text>
+<rect x="772.0" y="314" width="186" height="26" rx="13" fill="#ffffff" stroke="#7fa8cf" stroke-width="1"/>
+<text x="865.0" y="331" text-anchor="middle" font-size="11" font-weight="600" fill="#44546a">pod · Claude Code · sonnet-5</text>
+<rect x="420" y="240" width="250" height="120" rx="12" fill="#efe9fa" stroke="#a58fd4" stroke-width="1.5" filter="url(#s)"/>
+<text x="545.0" y="286" text-anchor="middle" font-size="15" font-weight="700" fill="#24292f">👤 Matt · approval</text>
+<text x="545.0" y="309" text-anchor="middle" font-size="12" fill="#57606a">the human gate</text>
+<rect x="100" y="240" width="250" height="120" rx="12" fill="#e8f1fb" stroke="#7fa8cf" stroke-width="1.5" filter="url(#s)"/>
+<text x="225.0" y="274" text-anchor="middle" font-size="15" font-weight="700" fill="#24292f">🔨 Han / Luke · build</text>
+<text x="225.0" y="297" text-anchor="middle" font-size="12" fill="#57606a">writes the fix, opens the PR</text>
+<rect x="132.0" y="314" width="186" height="26" rx="13" fill="#ffffff" stroke="#7fa8cf" stroke-width="1"/>
+<text x="225.0" y="331" text-anchor="middle" font-size="11" font-weight="600" fill="#44546a">pods · Claude Code · sonnet-5</text>
+<rect x="100" y="430" width="250" height="120" rx="12" fill="#fdf3d7" stroke="#e0b64b" stroke-width="1.5" filter="url(#s)"/>
+<text x="225.0" y="464" text-anchor="middle" font-size="15" font-weight="700" fill="#24292f">🔍 Chewie · review</text>
+<text x="225.0" y="487" text-anchor="middle" font-size="12" fill="#57606a">rejects bad builds, approves the merge</text>
+<rect x="132.0" y="504" width="186" height="26" rx="13" fill="#ffffff" stroke="#e0b64b" stroke-width="1"/>
+<text x="225.0" y="521" text-anchor="middle" font-size="11" font-weight="600" fill="#44546a">pod · Claude Code · opus-5</text>
+<rect x="420" y="430" width="250" height="120" rx="12" fill="#e8f1fb" stroke="#7fa8cf" stroke-width="1.5" filter="url(#s)"/>
+<text x="545.0" y="464" text-anchor="middle" font-size="15" font-weight="700" fill="#24292f">🚀 Ackbar · deploy</text>
+<text x="545.0" y="487" text-anchor="middle" font-size="12" fill="#57606a">ships it to production</text>
+<rect x="452.0" y="504" width="186" height="26" rx="13" fill="#ffffff" stroke="#7fa8cf" stroke-width="1"/>
+<text x="545.0" y="521" text-anchor="middle" font-size="11" font-weight="600" fill="#44546a">pod · Claude Code · sonnet-5</text>
+<rect x="740" y="430" width="250" height="120" rx="12" fill="#fdf3d7" stroke="#e0b64b" stroke-width="1.5" filter="url(#s)"/>
+<text x="865.0" y="464" text-anchor="middle" font-size="15" font-weight="700" fill="#24292f">🧪 Chewie · smoke test</text>
+<text x="865.0" y="487" text-anchor="middle" font-size="12" fill="#57606a">checks the live site</text>
+<rect x="772.0" y="504" width="186" height="26" rx="13" fill="#ffffff" stroke="#e0b64b" stroke-width="1"/>
+<text x="865.0" y="521" text-anchor="middle" font-size="11" font-weight="600" fill="#44546a">pod · Claude Code · opus-5</text>
+<rect x="1060" y="430" width="250" height="120" rx="12" fill="#3f5875" stroke="#2c405a" stroke-width="1.5" filter="url(#s)"/>
+<text x="1185.0" y="464" text-anchor="middle" font-size="15" font-weight="700" fill="#ffffff">🎯 Lando · close-out</text>
+<text x="1185.0" y="487" text-anchor="middle" font-size="12" fill="#d7e2ef">prices the issue, writes the ledger row</text>
+<rect x="1092.0" y="504" width="186" height="26" rx="13" fill="#2c405a" stroke="#2c405a" stroke-width="1"/>
+<text x="1185.0" y="521" text-anchor="middle" font-size="11" font-weight="600" fill="#ffffff">pod · Claude Code · sonnet-5</text>
+<rect x="100" y="591" width="18" height="18" rx="5" fill="#fdf3d7" stroke="#e0b64b" stroke-width="1.5"/>
+<text x="126" y="605" font-size="12.5" fill="#44546a">premium model (claude-opus-5): the judgment gates</text>
+<rect x="470" y="591" width="18" height="18" rx="5" fill="#e8f1fb" stroke="#7fa8cf" stroke-width="1.5"/>
+<text x="496" y="605" font-size="12.5" fill="#44546a">cheaper model (claude-sonnet-5): everything else</text>
+<line x1="840" y1="600" x2="878" y2="600" stroke="#d1553f" stroke-width="2.5" stroke-dasharray="7 5" marker-end="url(#r)"/>
+<text x="886" y="605" font-size="12.5" fill="#44546a">work sent back (rework)</text>
+</svg>
