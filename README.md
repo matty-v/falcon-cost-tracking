@@ -19,11 +19,13 @@ handoff. Double arrows mark where work gets sent back.
 
 <img src="docs/assets/team-flow.svg" width="100%" alt="How the team works an issue: GitHub issue flows through triage, design, challenge, deploy check, human approval, build, review, deploy, smoke test, and close-out, snaking across three rows. Gold boxes run the premium model at the judgment gates; blue boxes run the cheaper model; dashed red arrows mark work sent back.">
 
-Cost tracking rides the whole path: **every agent runs
-[`token-usage.sh`](docs/mirror/token-usage.sh) twice per stage**, once at
-pickup (an odometer reading of its session) and once at completion (posting
-what its stage used and on which model). Those reports are what Lando adds up
-at the end with [`issue-cost.sh`](docs/mirror/issue-cost.sh).
+Every worker's entry point is the shared `/handle-inbound` skill, which
+routes to the stage skill shown in each card. Cost tracking rides the whole
+path: **every agent runs [`token-usage.sh`](docs/mirror/token-usage.sh) twice
+per stage**, once at pickup (an odometer reading of its session) and once at
+completion (posting what its stage used and on which model). Those reports
+are what Lando adds up at the end with
+[`issue-cost.sh`](docs/mirror/issue-cost.sh).
 
 ## An Experiment in Model Cost versus Quality
 
