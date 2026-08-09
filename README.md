@@ -18,13 +18,12 @@ handoff using webhooks to dispatch prompts to the other agents.
 
 <img src="docs/assets/team-flow.svg" width="100%" alt="How the team works an issue: GitHub issue flows through triage, design, challenge, deploy check, human approval, build, review, deploy, smoke test, and close-out, snaking across three rows. Gold boxes run the premium model at the judgment gates; blue boxes run the cheaper model; dashed red arrows mark work sent back.">
 
-Every worker's entry point is the shared `/handle-inbound` skill, which
-routes to the stage skill shown in each card. Cost tracking rides the whole
-path: **every agent runs [`token-usage.sh`](docs/mirror/token-usage.sh) twice
-per stage**, once at pickup (an odometer reading of its session) and once at
-completion (posting what its stage used and on which model). Those reports
-are what Lando adds up at the end with
-[`issue-cost.sh`](docs/mirror/issue-cost.sh).
+Before this assignment, agents were performing their roles but never
+tracking costs, i.e. tokens on a given model. After this assignment, they now
+run [`token-usage.sh`](docs/mirror/token-usage.sh) twice per stage: once at
+pickup (an odometer reading of its session) and once at completion (posting
+what its stage used and on which model). At the end, Lando adds it all up
+with [`issue-cost.sh`](docs/mirror/issue-cost.sh) to show me a final number.
 
 ## An Experiment in Model Cost versus Quality
 
