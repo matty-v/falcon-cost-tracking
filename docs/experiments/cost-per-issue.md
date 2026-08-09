@@ -88,13 +88,27 @@ baseline. No mid-arm vendor merges; no mid-issue pod recycles.
 
 ### Arm-2 results (accumulating)
 
-| issue | tokens | cost | vs baseline median | kickbacks | notes |
-|---|---|---|---|---|---|
-| snapdex#1000 (view switcher) | ~60M | **$22.63** | −33% | 1 | yolo-labeled (flagged confound); build 26.9M lower_bound floor; first fast-path-priced row |
+| issue | tokens | cost (floor) | kickbacks | notes |
+|---|---|---|---|---|
+| snapdex#1000 (view switcher) | ~60M | **$22.63** (full) | 1 | first fast-path-priced row |
+| snapdex#1001 (dex-card link) | 75.0M | $33.07 | yes (13 stages) | 1 hole (obi-wan baseline lost — the recurring durability gap) |
 
-Wiring verified from transcript models: opus-5 only at architecture + review/
-smoke; sonnet-5 everywhere else. Guardrail tally so far: 1 kickback in 1 issue
-(baseline: 1 in 4) — judge across the arm, not from n=1.
+Both arm-2 issues ran yolo-labeled (consistent within-arm; differs from the
+gated baseline — flagged confound). Wiring verified from transcript models on
+every report: opus-5 only at architecture + review/smoke, sonnet-5 everywhere
+else.
+
+**Arm-2 read at n=2:** median floor $27.85 vs baseline $33.86 (−18% on the
+raw medians) — but the per-issue counterfactual is the cleaner comparison at
+this n: repricing each arm-2 issue's ACTUAL tokens at all-opus rates gives
+$34.18 (#1000) and $50.41 (#1001), i.e. **the mixed fleet saved ~34% on both
+issues** — squarely in the registered 35% prediction — while both issues ran
+heavier than baseline (kickback churn + yolo scope), which the raw medians
+conflate with the rate effect. Token volumes: elevated (~60M/75M vs 46M
+baseline median); whether that's sonnet-tier turn inflation (prediction #2's
+tier gap), issue size, or yolo is not separable at n=2 — recorded as an open
+question. Guardrails: kickbacks in 2/2 arm-2 issues vs 1/4 baseline — a
+watch-item, not a verdict, at this n.
 
 ## Designed follow-up — charter size (`full` vs `lite`), not yet run
 
