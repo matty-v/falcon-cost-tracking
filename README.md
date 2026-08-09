@@ -85,7 +85,18 @@ plausible wrong number. That fail-loud discipline was the core design bet.
 
 ### What the experiment found
 
-*(final numbers pending arm-2 completion — slot below)*
+With the instrument in place, we ran two arms on live issues. Baseline (n=4,
+all claude-opus-5): median **$33.86/issue**, 46M tokens, ~97% cache reads.
+Arm 2 (n=3, role-aware mix — opus kept only at the architecture and review
+gates, sonnet-5 everywhere else): median **$22.63/issue**. Three lenses agree:
+medians −33%, matched clean-bug pairs −29%, and per-issue counterfactuals
+(actual tokens repriced at all-opus) −34/−34/−35% — squarely on the registered
+prediction of ~35%, meaning the savings came from rates, not behavior change.
+One guardrail stayed honestly open: kickbacks appeared in all three arm-2
+issues vs 1-of-4 in baseline — not separable from confounds at this n, and
+recorded as the follow-up arm's first question rather than smoothed over.
+Full analysis with registered predictions:
+[docs/experiments/cost-per-issue.md](docs/experiments/cost-per-issue.md).
 
 ### Known limitations and rough edges
 

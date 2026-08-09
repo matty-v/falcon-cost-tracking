@@ -90,25 +90,39 @@ baseline. No mid-arm vendor merges; no mid-issue pod recycles.
 
 | issue | tokens | cost (floor) | kickbacks | notes |
 |---|---|---|---|---|
-| snapdex#1000 (view switcher) | ~60M | **$22.63** (full) | 1 | first fast-path-priced row |
-| snapdex#1001 (dex-card link) | 75.0M | $33.07 | yes (13 stages) | 1 hole (obi-wan baseline lost — the recurring durability gap) |
+| snapdex#1000 (view switcher) | ~60M | **$22.63** (full) | 1 | yolo; first fast-path-priced row |
+| snapdex#1001 (dex-card link) | 75.0M | $33.07 | 1 | yolo; 1 hole (obi-wan baseline lost) |
+| snapdex#1008 (report-sheet styling fix) | 44.1M | **$20.06** (full) | 1 | non-yolo, ZERO holes — best-matched datum; independent recomputation matched the official row to the cent |
 
 Both arm-2 issues ran yolo-labeled (consistent within-arm; differs from the
 gated baseline — flagged confound). Wiring verified from transcript models on
 every report: opus-5 only at architecture + review/smoke, sonnet-5 everywhere
 else.
 
-**Arm-2 read at n=2:** median floor $27.85 vs baseline $33.86 (−18% on the
-raw medians) — but the per-issue counterfactual is the cleaner comparison at
-this n: repricing each arm-2 issue's ACTUAL tokens at all-opus rates gives
-$34.18 (#1000) and $50.41 (#1001), i.e. **the mixed fleet saved ~34% on both
-issues** — squarely in the registered 35% prediction — while both issues ran
-heavier than baseline (kickback churn + yolo scope), which the raw medians
-conflate with the rate effect. Token volumes: elevated (~60M/75M vs 46M
-baseline median); whether that's sonnet-tier turn inflation (prediction #2's
-tier gap), issue size, or yolo is not separable at n=2 — recorded as an open
-question. Guardrails: kickbacks in 2/2 arm-2 issues vs 1/4 baseline — a
-watch-item, not a verdict, at this n.
+**RESULT (arm complete, n=3):** three lenses, one answer —
+
+| comparison | result |
+|---|---|
+| medians (baseline $33.86 → arm-2 $22.63) | **−33%** |
+| matched clean small-bugs (#995/#999 avg $28.29 → #1008 $20.06) | **−29%** |
+| per-issue counterfactual (actual tokens repriced at all-opus) | **−34%, −34%, −35%** |
+
+The registered prediction was $21–24 median (~35%): the arm landed at $22.63
+— inside the band — and the counterfactuals sit on the rate arithmetic almost
+exactly, meaning the savings came from rates, not from behavior change. Token
+volumes ran elevated on the two yolo issues (60–75M vs 46M baseline median)
+but the non-yolo closer (#1008, 44.1M) matched baseline volume — consistent
+with prediction #2's "volumes unchanged" at matched scope, and attributing
+the inflation to issue scope/yolo rather than sonnet-tier turn inflation.
+Guardrails: kickbacks appeared in 3/3 arm-2 issues vs 1/4 baseline — the one
+result that stops short of a clean bill. At this n it is not separable from
+yolo mode and issue mix, but it is exactly the signal the follow-up arm
+(drop Chewie to sonnet-5? revert builders to opus?) should watch first, and
+it is recorded as the experiment's open question rather than smoothed over.
+
+**Bottom line for the bill-payer: role-aware model placement cut cost per
+issue by roughly a third while keeping the premium model at both judgment
+gates, and the ledger now prices that trade to the cent per role.**
 
 ## Designed follow-up — charter size (`full` vs `lite`), not yet run
 

@@ -550,6 +550,19 @@ The pattern across both: the AI proposes with arithmetic, the human redirects
 with judgment about risk placement, and the doc registers predictions before
 data arrives so hindsight can't rewrite them.
 
+### Session 4 — 2026-08-09 — the experiment concludes
+
+Arm 2 completed with snapdex#1008 as the closer: non-yolo, zero holes, fully
+priced at $20.06 — and the independent local recomputation matched Lando's
+official ledger row to the cent, closing the loop on instrument trust. Final
+result: median cost/issue fell $33.86 → $22.63 (−33%), matched-pair −29%,
+and all three per-issue counterfactuals landed on the rate arithmetic
+(−34/−34/−35% vs the registered ~35%). The write-up records the one open
+guardrail honestly: kickbacks in 3/3 arm-2 issues vs 1/4 baseline —
+confounded at this n, flagged as the follow-up arm's first question. Charter
+script finished 4-for-4 since replacing the prose. Results filled into the
+README write-up and the experiment doc; submission is at final-polish stage.
+
 ## Trial and error — the whole loop, consolidated (noted for the record at Matt's request)
 
 Every entry above is chronological; this section gathers the trial→error→
