@@ -22,11 +22,19 @@ This project makes the team account for its own spend:
    from a machine-generated rate table, cross-checks the platform's metrics API,
    posts a cost summary card to the Discord thread, and appends a row to a
    running **cost ledger** (`cost-ledger.jsonl`) so issues are comparable.
-4. **A platform fix** — building this exposed that Kyber's metrics pipeline was
-   silently dropping output tokens (the dominant cost term) and not pricing
-   cache writes. Fixed in a standalone PR so the platform numbers stop lying.
-5. **An experiment** — with the ledger in place: does shrinking the ~140KB team
-   charter each agent loads reduce cost per issue? (Variable: context size.)
+4. **A platform fix** — building this exposed that Kyber's metrics pipeline
+   silently dropped output tokens and priced cache writes at $0. Fixed in a
+   standalone PR (kyber#23, released as v1.0.1). Where it mattered here:
+   the team's price table is a copy of Kyber's machine-generated rate feed,
+   and cache-write rates — ~12% of every issue's bill — exist in that feed
+   only because of this fix; it's also what makes the platform's metrics a
+   meaningful independent cross-check against the agents' self-reports
+   instead of a number known to be wrong. The ledger's token *counts* never
+   depended on it (self-reports read transcripts directly).
+5. **An experiment** — swap the underlying models by role and measure the
+   effect on **both cost and quality**: premium model kept only at the
+   architecture and review gates, a cheaper tier everywhere else, hypothesis
+   registered before running, kickbacks scrutinized as hard as the savings.
 
 ## Where the changes live
 
@@ -85,25 +93,34 @@ plausible wrong number. That fail-loud discipline was the core design bet.
 
 ### What the experiment found
 
-With the instrument in place, we ran two arms on live issues. Baseline (n=4,
-all claude-opus-5): median **$33.86/issue**, 46M tokens, ~97% cache reads.
-Arm 2 (n=3, role-aware mix — opus kept only at the architecture and review
-gates, sonnet-5 everywhere else): median **$22.63/issue**. Three lenses agree:
-medians −33%, matched clean-bug pairs −29%, and per-issue counterfactuals
-(actual tokens repriced at all-opus) −34/−34/−35% — squarely on the registered
-prediction of ~35%, meaning the savings came from rates, not behavior change.
-The conclusion is deliberately two-sided. Costs fell — but the cheaper
-models exacted a measurable tax: rework (duplicate-stage re-runs) rose from
-6.9% of issue cost in baseline to 18.3% in the mixed arm, hit all three
-arm-2 issues, and — the telling part — moved downstream from cheap thinking
-stages to expensive implementation/review loops: the retained opus review
-gate kicking back sonnet-built work. In this sample the rate savings paid
-for the added rework about five times over, so the trade won. But escaped
-defects, wall-clock from re-review loops, and how rework scales with issue
-size are all unmeasured at n=3 — so the honest claim is "a third cheaper,
-with a quantified and rising rework tax that the next experiment must watch
-first," not "cheaper models are free." Full analysis with registered
-predictions: [docs/experiments/cost-per-issue.md](docs/experiments/cost-per-issue.md).
+**The experiment: change the underlying models by role and measure both cost
+and quality.** Baseline ran all eight agents on claude-opus-5 (n=4 live
+issues); the test arm kept opus-5 only at the two judgment gates
+(architecture, review) and ran claude-sonnet-5 everywhere else (n=3 live
+issues). Hypotheses were registered in the repo before the arm ran.
+
+| | Hypothesis (registered first) | Result |
+|---|---|---|
+| **Cost / issue** | median $21–24 (~35% below the $33.86 baseline) | **$22.63 (−33%)** — counterfactuals (same tokens at opus rates) −34/−34/−35% |
+| **Token volume** | roughly unchanged (±15%) | matched at comparable scope (44M vs 46M median); elevated only on the two bigger yolo-labeled issues |
+| **Quality (the scrutiny)** | kickbacks / rejections stay flat | **Not flat: rework rose 6.9% → 18.3% of issue cost**, hit 3/3 test issues, and moved downstream into build/review loops |
+| **Net** | savings if guardrails hold | Savings (~$11/issue) paid the added rework (~$2.10/issue) ~5× over — *in this sample*; escaped defects and scaling unmeasured |
+
+Behind the table: three lenses agree on the cost result — medians −33%,
+matched clean-bug pairs −29%, per-issue counterfactuals on the registered
+rate arithmetic — meaning the savings came from where the models were
+placed, not from changed behavior.
+The quality row is the finding I care most about. The rework didn't just
+increase — it *moved*: baseline rework lived in cheap thinking stages, while
+the test arm's rework was the retained opus reviewer kicking sonnet-built
+work back through expensive build/review loops. The gate did its job, and
+that's precisely the tax cheaper models pay. The honest claim is therefore
+"a third cheaper, with a quantified and rising rework tax the next
+experiment must watch first" — not "cheaper models are free." Escaped
+defects (bugs the gate misses entirely), wall-clock from re-review loops,
+and how rework scales with issue size remain unmeasured at n=3. Full
+analysis with registered predictions:
+[docs/experiments/cost-per-issue.md](docs/experiments/cost-per-issue.md).
 
 ### Known limitations and rough edges
 
