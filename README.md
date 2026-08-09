@@ -35,17 +35,18 @@ I ran another local Claude Code session on Fable 5. The job of this agent
 was to help me set up the experiment, implement cost tracking across the AI
 dev team, and measure and publish the results.
 
-The test setup: keep the premium model only at the two judgment points, the
-design stage and the code-review gate, and run the cheaper Sonnet 5
-everywhere else. I compared 3 live issues on this setup against the 4-issue
-baseline. Costs came down by about a third, and three separate checks agree
-the savings came from where the models were placed, not from the agents
-behaving differently. Quality is the two-sided part: redone work nearly
-tripled, because the premium reviewer bounced more of the cheaper builder's
-work back. In this sample the savings paid for that added rework about 5 to
-1. Bugs that slip past the reviewer entirely, and time lost in review loops,
-are not measured at this sample size. Full detail, including the predictions
-I wrote down before running it:
+The test setup: keep Opus 5 only at the design stage and the code-review
+gate, and run Sonnet 5 everywhere else. I compared 3 issues (on another
+personal project, Snapdex, [snapdex.ai](https://snapdex.ai)) using the new
+setup against the 4-issue baseline.
+
+The result: costs came down by about a third.
+
+As for quality, the team under the new model arrangement had more issues
+getting kicked back at the design and code-review gates (Obi-wan and Chewie
+running Opus 5), but that extra spend was offset by the savings from the
+cheaper models doing the building. Full detail, including the predictions I
+wrote down before running it:
 [docs/experiments/cost-per-issue.md](docs/experiments/cost-per-issue.md).
 
 | | Before (all premium model) | Prediction (written first) | Result |
