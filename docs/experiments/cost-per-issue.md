@@ -86,6 +86,16 @@ fleet → run ~3 comparable snapdex issues under normal gates → compare via th
 ledger's per-model stage rows, floor basis, same stage-profile analysis as
 baseline. No mid-arm vendor merges; no mid-issue pod recycles.
 
+### Arm-2 results (accumulating)
+
+| issue | tokens | cost | vs baseline median | kickbacks | notes |
+|---|---|---|---|---|---|
+| snapdex#1000 (view switcher) | ~60M | **$22.63** | −33% | 1 | yolo-labeled (flagged confound); build 26.9M lower_bound floor; first fast-path-priced row |
+
+Wiring verified from transcript models: opus-5 only at architecture + review/
+smoke; sonnet-5 everywhere else. Guardrail tally so far: 1 kickback in 1 issue
+(baseline: 1 in 4) — judge across the arm, not from n=1.
+
 ## Designed follow-up — charter size (`full` vs `lite`), not yet run
 
 The original variable, deferred in favor of the bigger lever. Design: per-role
