@@ -5,9 +5,9 @@
 I run a team of eight AI coding agents (the "Falcon Dev Team") that works
 GitHub issues end to end: triage, design, build, review, deploy. It runs on
 [Kyber](docs/kyber-explainer.md), a platform I built for hosting long-running
-AI agents. The team ships real software and spends real money on one shared
-API account. Before this project I could not answer the most basic question
-about it: **what does an issue cost?**
+AI agents. The team ships real software using shared credentials on a Claude Max
+subscription. The question I wanted to answer: **how much would issues cost
+using straight API rates?**
 
 ## How the team works an issue
 
