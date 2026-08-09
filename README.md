@@ -11,9 +11,10 @@ using straight API rates?**
 
 ## How the team works an issue
 
-Each agent box below is a Kubernetes pod on Kyber running its own Claude
-Code session. Lando (the team lead) receives every GitHub event and routes
-each handoff. Dashed red arrows mark where work gets sent back.
+Each box below shows a pod that runs on a k8s cluster. Each pod runs a
+Claude Code session with different skills for performing the entire SDLC for
+a project. Lando (the team lead) receives every GitHub event and routes each
+handoff using webhooks to dispatch prompts to the other agents.
 
 <img src="docs/assets/team-flow.svg" width="100%" alt="How the team works an issue: GitHub issue flows through triage, design, challenge, deploy check, human approval, build, review, deploy, smoke test, and close-out, snaking across three rows. Gold boxes run the premium model at the judgment gates; blue boxes run the cheaper model; dashed red arrows mark work sent back.">
 
