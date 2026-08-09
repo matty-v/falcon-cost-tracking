@@ -561,7 +561,13 @@ and all three per-issue counterfactuals landed on the rate arithmetic
 guardrail honestly: kickbacks in 3/3 arm-2 issues vs 1/4 baseline —
 confounded at this n, flagged as the follow-up arm's first question. Charter
 script finished 4-for-4 since replacing the prose. Results filled into the
-README write-up and the experiment doc; submission is at final-polish stage.
+README write-up and the experiment doc. Matt then directed the conclusion's
+final shape: not just "costs decrease" but scrutiny of the kickback tax —
+which, quantified, turned out to be the experiment's most interesting
+finding: rework rose 6.9% → 18.3% of issue cost under cheaper models AND
+moved downstream into implementation/review loops (the opus gate catching
+sonnet work). Savings paid the tax ~5× over in this sample; escaped defects
+and scaling remain the registered open questions. Submission finalized.
 
 ## Trial and error — the whole loop, consolidated (noted for the record at Matt's request)
 

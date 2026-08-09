@@ -92,11 +92,18 @@ gates, sonnet-5 everywhere else): median **$22.63/issue**. Three lenses agree:
 medians −33%, matched clean-bug pairs −29%, and per-issue counterfactuals
 (actual tokens repriced at all-opus) −34/−34/−35% — squarely on the registered
 prediction of ~35%, meaning the savings came from rates, not behavior change.
-One guardrail stayed honestly open: kickbacks appeared in all three arm-2
-issues vs 1-of-4 in baseline — not separable from confounds at this n, and
-recorded as the follow-up arm's first question rather than smoothed over.
-Full analysis with registered predictions:
-[docs/experiments/cost-per-issue.md](docs/experiments/cost-per-issue.md).
+The conclusion is deliberately two-sided. Costs fell — but the cheaper
+models exacted a measurable tax: rework (duplicate-stage re-runs) rose from
+6.9% of issue cost in baseline to 18.3% in the mixed arm, hit all three
+arm-2 issues, and — the telling part — moved downstream from cheap thinking
+stages to expensive implementation/review loops: the retained opus review
+gate kicking back sonnet-built work. In this sample the rate savings paid
+for the added rework about five times over, so the trade won. But escaped
+defects, wall-clock from re-review loops, and how rework scales with issue
+size are all unmeasured at n=3 — so the honest claim is "a third cheaper,
+with a quantified and rising rework tax that the next experiment must watch
+first," not "cheaper models are free." Full analysis with registered
+predictions: [docs/experiments/cost-per-issue.md](docs/experiments/cost-per-issue.md).
 
 ### Known limitations and rough edges
 

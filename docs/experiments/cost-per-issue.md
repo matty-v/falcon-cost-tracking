@@ -114,11 +114,26 @@ volumes ran elevated on the two yolo issues (60–75M vs 46M baseline median)
 but the non-yolo closer (#1008, 44.1M) matched baseline volume — consistent
 with prediction #2's "volumes unchanged" at matched scope, and attributing
 the inflation to issue scope/yolo rather than sonnet-tier turn inflation.
-Guardrails: kickbacks appeared in 3/3 arm-2 issues vs 1/4 baseline — the one
-result that stops short of a clean bill. At this n it is not separable from
-yolo mode and issue mix, but it is exactly the signal the follow-up arm
-(drop Chewie to sonnet-5? revert builders to opus?) should watch first, and
-it is recorded as the experiment's open question rather than smoothed over.
+**Scrutinizing the negative effects (the conclusion's second half):** kickbacks
+appeared in 3/3 arm-2 issues vs 1-of-4 (with a 2nd showing re-runs) in
+baseline. Quantified as REWORK — the cost of duplicate-stage re-runs per
+issue:
+
+| arm | rework incidence | rework share of issue cost | where the rework happened |
+|---|---|---|---|
+| baseline (opus) | 2/4 issues | mean 6.9% (~$2.93/issue) | thinking stages only (architecture, challenge) |
+| arm 2 (mixed) | 3/3 issues | mean **18.3%** (~$5.06/issue) | **moved downstream**: implementation + review re-runs on 2 of 3 issues (#1001: 30% of its cost, incl. two review passes) |
+
+The downstream shift is the medically-interesting symptom: the opus review
+gate kicking back sonnet-built work is the gate doing exactly its job — at a
+price. In this sample the rate savings (~$11/issue) paid the added rework
+(~$2.1/issue) roughly five times over, so the trade clearly won. But three
+costs stay unmeasured at this n and this window: defects that escape the gate
+entirely (post-ship bugs), wall-clock and human-gate load from re-review
+loops, and whether rework compounds on larger issues (#1001, the largest,
+had the worst share). The follow-up arm's design should hold model placement
+and measure rework FIRST — it, not the headline rate, is where cheaper models
+exact their tax.
 
 **Bottom line for the bill-payer: role-aware model placement cut cost per
 issue by roughly a third while keeping the premium model at both judgment
