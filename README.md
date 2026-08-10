@@ -56,45 +56,56 @@ wrote down before running it:
 | **Quality** | 6.9% of issue cost was redone work | stays flat | **18.3% redone, on all 3 test issues** |
 | **Net** | | savings win if quality holds | Savings of about $11 per issue bought about $2.10 of added rework: 5 to 1 in favor, in this sample |
 
-## How I used AI, and what worked
+## Working with AI: wins and challenges
 
-Claude Code ran the whole build:
+**The wins:**
 
-- Research agents mapped two codebases in parallel before any plan was made.
-- Design agents produced detailed plans, which I approved with changes.
-- One agent built the platform fix while the main session built the team
-  changes.
-- Three independent AI reviewers attacked the work before merge and produced
-  22 confirmed findings, including a redesign of code I had already approved.
-- Live monitors watched the agent team work real issues and flagged failures
-  as they happened.
+- Clearly stating the problem and objectives up front. In my Fable session,
+  it tracked multiple tasks in phases, starting with making the cost-tracking
+  changes to the team and ending with building the presentation for this
+  assignment.
+- For the AI dev team, having Opus as the model during spec design and code
+  review was the most efficient use of models. As long as the spec is solid,
+  it has a downstream effect on ensuring what gets built meets the spec.
+- Diligently capturing everything in documentation. Having this assignment
+  documented at each phase meant that I could pivot the independent variable
+  from initial context loading on agents to the LLM each agent used, without
+  the Fable session drifting from the goal.
+- The Fable session independently monitored the team's execution of GitHub
+  issues, which allowed us to iterate on any problems with cost or token
+  reporting or other team issues.
 
-The pattern that worked: the AI proposes with arithmetic, I redirect with
-judgment. Every instance is in [PROCESS.md](PROCESS.md). The single most
-repeated lesson: anything that must happen reliably belongs in a tested
-script, not in written instructions (example: [`charter-ensure.sh`](docs/mirror/charter-ensure.sh),
-which replaced instructions the agents skipped twice). The agents ran script commands 8 out of
-8 times; they skipped written procedures twice.
+**The things AI got wrong:**
 
-## Where the AI got things wrong
+- The Fable session at first suggested decreasing the context each agent
+  loads as a means to decrease cost. It wasn't wrong, but I made it compute
+  the estimated savings, which turned out to be less than the prediction for
+  changing the models on the agents (8–12% vs. about 35%).
+- We went through a few iterations where some agents didn't report token use
+  even after the Fable session applied the changes. Some trial and error is
+  inevitable when working on a complicated workflow with non-deterministic
+  LLMs, but it puts a premium on extra scrutiny during the planning phase.
+- Related to the above, the Fable session both caught and introduced bugs
+  along the way. A few examples:
+  - It shipped a cost script that passed large data through environment
+    variables and hit an operating-system limit in production; one of the
+    dev team's own agents diagnosed the crash from inside its pod
+    ([fix](docs/mirror/fdc-123.patch)).
+  - Its first ledger safety-net job failed silently because errors went
+    where nobody looked; the same incident that revealed the crash also
+    revealed the bad error routing
+    ([the job](docs/mirror/ledger-reconciler.sh)).
+  - Its cost scripts initially shipped with an outdated price table that
+    would have silently cut every cost figure roughly in half; its own
+    adversarial reviewers caught that, along with 21 other confirmed
+    findings, before merge.
+  - Agents skipped written instructions for posting the per-issue plan card
+    twice; moving the procedure into a script
+    ([charter-ensure.sh](docs/mirror/charter-ensure.sh)) fixed it, 4 for 4
+    afterward.
 
-The full list is in [PROCESS.md](PROCESS.md) ("Trial and error" section). Highlights:
-
-- Its first design for counting output tokens could miss work, double-count
-  after gaps, and mistake new work for old. Its own reviewers caught all
-  three; it was redesigned.
-- Its cost scripts shipped with an outdated price table (caught in review, [patch](docs/mirror/falcon-dev-common-review-fixes.patch)) that would have
-  silently cut every cost figure roughly in half.
-- It passed large data the wrong way and hit an operating-system limit in
-  production ([fix](docs/mirror/fdc-123.patch)). One of my own agents diagnosed that bug from inside its pod.
-- A cleanup job crashed silently for hours because its error messages went
-  where nobody looked ([the job](docs/mirror/ledger-reconciler.sh) now reports where its caller reads).
-- It once declared Discord broken based on a missing bookkeeping note, when
-  the Discord thread existed all along. I corrected it by looking.
-
-Every failure was caught: by tests the AI wrote, by reviewers the AI ran, by
-the agent team itself, or by me. And by design, every failure showed up as an
-honest "unavailable" or "partial" in the records, never as a made-up number.
+The full blow-by-blow, including every prompt and every course correction,
+is in [PROCESS.md](PROCESS.md).
 
 ## Known limitations and rough edges
 
