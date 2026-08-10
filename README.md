@@ -7,7 +7,9 @@ GitHub issues end to end: triage, design, build, review, deploy. It runs on
 [Kyber](docs/kyber-explainer.md), a platform I built for hosting long-running
 AI agents. The team ships real software using shared credentials on a Claude Max
 subscription. The question I wanted to answer: **how much would issues cost
-using straight API rates?**
+using straight API rates?** The answer turned out to be about $34 per issue,
+and a targeted model change cut it by a third. The rest of this page is how
+I measured that.
 
 Kyber itself is not the small, scoped project the assignment asks for. It is
 a passion project I've been hacking on since April, and I'd be happy to talk
@@ -176,6 +178,11 @@ is in [PROCESS.md](PROCESS.md).
 - **The plan cards list outdated models.** The team's model roster file
   wasn't updated when I upgraded the fleet. Every report flags the difference
   between planned and actual instead of hiding it.
+- **This took more than the suggested 4 to 8 hours.** The plan's own
+  estimates exceeded the guideline (the platform fix alone was about a
+  developer-day) and [PROCESS.md](PROCESS.md) records that being flagged up
+  front rather than hidden. Accurate platform metrics were a prerequisite
+  for truthful cost tracking, so I chose to do the work.
 
 ## What I'd do with more time
 
