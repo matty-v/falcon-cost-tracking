@@ -44,7 +44,11 @@ session, and each cost step is deliberately a shell script the playbook
 tells the agent to run — a repeated lesson of this project is that agents
 execute instructions that ARE a command far more reliably than instructions
 that describe a procedure ([PROCESS.md](PROCESS.md) records prose steps
-being skipped while script invocations ran 8 for 8). Concretely:
+being skipped while script invocations ran 8 for 8). The scripts are not
+skills themselves: a worker's `handle-inbound` playbook runs
+`token-usage.sh` from bash blocks in its pickup and completion steps, and
+Lando's close-out playbook calls `issue-cost.sh` — the skill decides when
+and why, the script owns the numbers. Concretely:
 
 - The scripts live in the team's shared repo (`falcon-dev-common`), are
   vendored SHA-pinned into each agent's identity repo, and get linked into
