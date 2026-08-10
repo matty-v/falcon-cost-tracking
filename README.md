@@ -39,16 +39,18 @@ with [`issue-cost.sh`](docs/mirror/issue-cost.sh) to show me a final number.
 
 ### The mechanics
 
-An agent's skills are markdown playbooks loaded into its Claude Code
-session, and each cost step is deliberately a shell script the playbook
-tells the agent to run — a repeated lesson of this project is that agents
-execute instructions that ARE a command far more reliably than instructions
-that describe a procedure ([PROCESS.md](PROCESS.md) records prose steps
-being skipped while script invocations ran 8 for 8). The scripts are not
-skills themselves: a worker's `handle-inbound` playbook runs
-`token-usage.sh` from bash blocks in its pickup and completion steps, and
-Lando's close-out playbook calls `issue-cost.sh` — the skill decides when
-and why, the script owns the numbers. Concretely:
+An agent's skills are markdown instruction files loaded into its Claude
+Code session — `handle-inbound`, for example, is the skill every worker
+follows when Lando hands it a piece of work. The shell scripts are not
+skills; they are ordinary tested programs that a skill tells the agent to
+run at set points. The `handle-inbound` skill runs `token-usage.sh` at
+pickup and again at completion, and Lando's close-out skill runs
+`issue-cost.sh` — the skill decides when and why, the script owns the
+numbers. That split is deliberate: a repeated lesson of this project is
+that agents execute instructions that ARE a command far more reliably than
+instructions that describe a procedure ([PROCESS.md](PROCESS.md) records
+prose steps being skipped while script invocations ran 8 for 8).
+Concretely:
 
 - The scripts live in the team's shared repo (`falcon-dev-common`), are
   vendored SHA-pinned into each agent's identity repo, and get linked into
