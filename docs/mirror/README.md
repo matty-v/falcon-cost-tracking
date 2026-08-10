@@ -18,7 +18,20 @@ reviewers can read it.
 [`test_token_usage.sh`](test_token_usage.sh) ·
 [`test_issue_cost.sh`](test_issue_cost.sh) ·
 [`test_ledger_reconciler.sh`](test_ledger_reconciler.sh)
-(55+ checks total; several reproduce real production failures.)
+(59 checks total; several reproduce real production failures.)
+
+These files are verbatim copies from the private repos, so the suites look
+for the scripts under `<repo root>/scripts/`. To run them from the root of
+this repo:
+
+```sh
+mkdir -p scripts && cp docs/mirror/token-usage.sh docs/mirror/issue-cost.sh docs/mirror/ledger-reconciler.sh scripts/
+bash docs/mirror/test_token_usage.sh
+bash docs/mirror/test_issue_cost.sh
+bash docs/mirror/test_ledger_reconciler.sh
+```
+
+(`scripts/` is git-ignored — it exists only to satisfy the suites' layout.)
 
 ## Full patches (everything else: team charter, contracts, skills)
 
@@ -41,4 +54,7 @@ reviewers can read it.
 
 [`cost-ledger-snapshot.jsonl`](cost-ledger-snapshot.jsonl): the team lead's
 actual ledger as of submission (one JSON row per issue, written by the agents
-themselves during the live runs).
+themselves during the live runs). It holds the four official rows (#995,
+#997, #1000, #1008); #998, #999, and #1001 were aggregated locally from the
+same markers — provenance detailed in
+[the experiment doc](../experiments/cost-per-issue.md#data-provenance).
