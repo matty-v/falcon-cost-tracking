@@ -21,9 +21,9 @@ who can harness workflows coordinating multiple agents at a time have
 something very powerful — especially as the LLMs become smarter and agent
 harnesses like Claude Code become more sophisticated.
 
-## How the team works an issue
+## How my AI team works an issue
 
-Each box below shows a pod that runs on a k8s cluster. Each pod runs a
+Each box below shows a pod that runs on a k8s cluster in my Kyber platform. Each pod runs a
 Claude Code session with different skills for performing the entire SDLC for
 a project. Lando (the team lead) receives every GitHub event and routes each
 handoff using webhooks to dispatch prompts to the other agents.
