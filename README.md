@@ -9,6 +9,18 @@ AI agents. The team ships real software using shared credentials on a Claude Max
 subscription. The question I wanted to answer: **how much would issues cost
 using straight API rates?**
 
+Kyber itself is not the small, scoped project the assignment asks for — it's
+a passion project I've been hacking on since April, and I'd be happy to talk
+through why I built it and how it works in the technical interview. In the
+meantime, the [Kyber docs](https://github.com/matty-v/kyber/tree/main/docs)
+cover the platform. The assignment's scope is the layer on top: optimizing my
+team of agents running on the platform. What I'm personally interested in
+answering is whether we can build a fully autonomous fleet of AI agents for
+software development, and exploring where the limitations might be. Engineers
+who can harness workflows coordinating multiple agents at a time have
+something very powerful — especially as the LLMs become smarter and agent
+harnesses like Claude Code become more sophisticated.
+
 ## How the team works an issue
 
 Each box below shows a pod that runs on a k8s cluster. Each pod runs a
@@ -16,7 +28,7 @@ Claude Code session with different skills for performing the entire SDLC for
 a project. Lando (the team lead) receives every GitHub event and routes each
 handoff using webhooks to dispatch prompts to the other agents.
 
-<img src="docs/assets/team-flow.svg" width="100%" alt="How the team works an issue: GitHub issue flows through triage, design, challenge, deploy check, human approval, build, review, deploy, smoke test, and close-out, snaking across three rows. Gold boxes run the premium model at the judgment gates; blue boxes run the cheaper model; dashed red arrows mark work sent back.">
+<img src="docs/assets/team-flow.svg" width="100%" alt="How the team works an issue: GitHub issue flows through triage, design, challenge, deploy check, human approval, build, review, deploy, smoke test, and close-out, snaking across three rows. Dashed red arrows mark work sent back.">
 
 Before this assignment, agents were performing their roles but never
 tracking costs, i.e. tokens on a given model. After this assignment, they now
@@ -114,7 +126,8 @@ is in [PROCESS.md](PROCESS.md).
   fast-track mode (skipping my approval gates); the cleanest test issue did
   not, and it matched the results.
 - **Some readings have gaps.** Agents sometimes restart mid-task, and 4 of
-  30 work segments lost their "starting odometer reading." Those issues
+  the 65 work segments across the seven issues lost their "starting odometer
+  reading." Those issues
   report a known-minimum cost instead of a total. The fix is designed but was
   held back by the code freeze during the experiment.
 - **Lando's own cost is not counted.** The team lead never assigns work to
@@ -132,6 +145,7 @@ is in [PROCESS.md](PROCESS.md).
   every agent re-reads, prediction already registered
   ([details](docs/experiments/cost-per-issue.md), 8–12% savings).
 - Give partial rows a proper minimum-cost figure instead of a footnote.
+- Fix the mid-task restart gap so readings stop getting lost.
 - Refactor agent skills to be more efficient.
 - Teach Kyber itself to attribute cost per issue, so the platform and the
   team agree on one number.
