@@ -31,7 +31,7 @@ bash docs/mirror/test_issue_cost.sh
 bash docs/mirror/test_ledger_reconciler.sh
 ```
 
-(`scripts/` is git-ignored — it exists only to satisfy the suites' layout.)
+(`scripts/` is git-ignored; it exists only to satisfy the suites' layout.)
 
 ## Full patches (everything else: team charter, contracts, skills)
 
@@ -39,11 +39,11 @@ bash docs/mirror/test_ledger_reconciler.sh
 |---|---|
 | [`falcon-dev-common.patch`](falcon-dev-common.patch) | The core cost-tracking change to the shared team repo |
 | [`falcon-dev-common-review-fixes.patch`](falcon-dev-common-review-fixes.patch) | Fixes from the adversarial review round |
-| [`fdc-119.patch`](fdc-119.patch) | Fan-out fix: version pin moves with the code; wider triggers |
+| [`fdc-119.patch`](fdc-119.patch) | Fix to the workflow that copies shared files to every agent repo: the version pin now moves with the code, and more file types trigger the copy |
 | [`fdc-120.patch`](fdc-120.patch) | Price table refresh (new models priced) |
 | [`fdc-121.patch`](fdc-121.patch) | Discord cost bullet gains the cache-read share |
 | [`fdc-122.patch`](fdc-122.patch) | Ledger safety net on the 15-minute timer |
-| [`fdc-123.patch`](fdc-123.patch) | Operating-system-limit fix: large data via files, not env vars |
+| [`fdc-123.patch`](fdc-123.patch) | Operating-system-limit fix: large data passed via files, not environment variables |
 | [`fdc-124.patch`](fdc-124.patch) | Unpriced ledger rows retry and heal |
 | [`lando-agent.patch`](lando-agent.patch) | Team lead: plan card + cost roll-up + ledger |
 | [`lando-agent-review-fixes.patch`](lando-agent-review-fixes.patch) | Team lead review fixes |
@@ -56,5 +56,5 @@ bash docs/mirror/test_ledger_reconciler.sh
 actual ledger as of submission (one JSON row per issue, written by the agents
 themselves during the live runs). It holds the four official rows (#995,
 #997, #1000, #1008); #998, #999, and #1001 were aggregated locally from the
-same markers — provenance detailed in
+same markers. Provenance is detailed in
 [the experiment doc](../experiments/cost-per-issue.md#data-provenance).

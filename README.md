@@ -9,7 +9,7 @@ AI agents. The team ships real software using shared credentials on a Claude Max
 subscription. The question I wanted to answer: **how much would issues cost
 using straight API rates?**
 
-Kyber itself is not the small, scoped project the assignment asks for — it's
+Kyber itself is not the small, scoped project the assignment asks for. It is
 a passion project I've been hacking on since April, and I'd be happy to talk
 through why I built it and how it works in the technical interview. In the
 meantime, the [Kyber docs](https://github.com/matty-v/kyber/tree/main/docs)
@@ -18,14 +18,15 @@ team of agents running on the platform. What I'm personally interested in
 answering is whether we can build a fully autonomous fleet of AI agents for
 software development, and exploring where the limitations might be. Engineers
 who can harness workflows coordinating multiple agents at a time have
-something very powerful — especially as the LLMs become smarter and agent
+something very powerful, especially as the LLMs become smarter and agent
 harnesses like Claude Code become more sophisticated.
 
 ## How my AI team works an issue
 
-Each box below shows a pod that runs on a k8s cluster in my Kyber platform. Each pod runs a
-Claude Code session with different skills for performing the entire SDLC for
-a project. Lando (the team lead) receives every GitHub event and routes each
+Each box below shows a pod that runs on a Kubernetes cluster in my Kyber
+platform. Each pod runs a Claude Code session with different skills for
+performing every step of the software development lifecycle for a project.
+Lando (the team lead) receives every GitHub event and routes each
 handoff using webhooks to dispatch prompts to the other agents.
 
 <img src="docs/assets/team-flow.svg" width="100%" alt="How the team works an issue: GitHub issue flows through triage, design, challenge, deploy check, human approval, build, review, deploy, smoke test, and close-out, snaking across three rows. Dashed red arrows mark work sent back.">
@@ -40,36 +41,38 @@ with [`issue-cost.sh`](docs/mirror/issue-cost.sh) to show me a final number.
 ### The mechanics
 
 An agent's skills are markdown instruction files loaded into its Claude
-Code session — `handle-inbound`, for example, is the skill every worker
+Code session. `handle-inbound`, for example, is the skill every worker
 follows when Lando hands it a piece of work. The shell scripts are not
 skills; they are ordinary tested programs that a skill tells the agent to
 run at set points. The `handle-inbound` skill runs `token-usage.sh` at
 pickup and again at completion, and Lando's close-out skill runs
-`issue-cost.sh` — the skill decides when and why, the script owns the
+`issue-cost.sh`. The skill decides when and why; the script owns the
 numbers. That split is deliberate: a repeated lesson of this project is
 that agents execute instructions that ARE a command far more reliably than
 instructions that describe a procedure ([PROCESS.md](PROCESS.md) records
 prose steps being skipped while script invocations ran 8 for 8).
 Concretely:
 
-- The scripts live in the team's shared repo (`falcon-dev-common`), are
-  vendored SHA-pinned into each agent's identity repo, and get linked into
-  the pod's skills directory at session start — the whole fleet runs the
-  same reviewed version, and the pin SHA is stamped into every report.
-- [`token-usage.sh`](docs/mirror/token-usage.sh) runs inside the pod against
-  the agent's own session transcript (JSONL on the pod's persistent disk):
-  it sums finalized assistant entries per model across the transcript tree,
-  deduplicating by message id. At pickup it posts the baseline; at
-  completion it computes the stage's delta and embeds it as a hidden
-  HTML-comment marker (`falcon:usage:v1`) inside the GitHub comment the
-  agent already posts via the `gh` CLI — no new infrastructure, the issue
-  itself is the data bus.
+- The scripts live in the team's shared repo (`falcon-dev-common`). Each
+  agent's own repo carries an exact copy, pinned to a specific version, and
+  the copy is linked into the agent's skills folder when its session
+  starts. The whole fleet runs the same reviewed version, and that
+  version's ID is stamped into every usage report.
+- [`token-usage.sh`](docs/mirror/token-usage.sh) runs inside the pod and
+  reads the log of the agent's own session, adding up the tokens used per
+  model and counting each message exactly once. At pickup it records the
+  starting count; at completion it computes what the stage used and embeds
+  the result as a marker inside the GitHub comment the agent already
+  posts. The marker is invisible when reading the comment on GitHub but
+  easy for a program to find later, so the issue itself carries all the
+  cost data and no new infrastructure was needed.
 - At issue close, Lando's [`issue-cost.sh`](docs/mirror/issue-cost.sh)
-  collects every marker across the issue and its auto-discovered PRs,
-  prices the tokens from a vendored machine-generated rate table (no
-  hand-typed prices anywhere), and appends one row to the ledger. A
-  15-minute cron backstop ([`ledger-reconciler.sh`](docs/mirror/ledger-reconciler.sh))
-  writes any row the close-out missed and retries rows that couldn't be
+  collects every marker from the issue and the pull requests linked to it,
+  converts tokens to dollars using a price table generated from a public
+  pricing feed (no price anywhere in the pipeline is typed by hand), and
+  appends one row to the ledger file. A scheduled job that runs every 15
+  minutes ([`ledger-reconciler.sh`](docs/mirror/ledger-reconciler.sh))
+  writes any row the close-out missed and retries rows that could not be
   priced.
 
 ## An Experiment in Model Cost versus Quality
@@ -143,9 +146,9 @@ wrote down before running it:
     revealed the bad error routing
     ([the job](docs/mirror/ledger-reconciler.sh)).
   - Its cost scripts initially shipped with an outdated price table that
-    would have silently cut every cost figure roughly in half; its own
-    adversarial reviewers caught that, along with 21 other confirmed
-    findings, before merge.
+    would have silently cut every cost figure roughly in half; the reviewer
+    agents it ran against its own code caught that, along with 21 other
+    confirmed findings, before merge.
   - Agents skipped written instructions for posting the per-issue plan card
     twice; moving the procedure into a script
     ([charter-ensure.sh](docs/mirror/charter-ensure.sh)) fixed it, 4 for 4
