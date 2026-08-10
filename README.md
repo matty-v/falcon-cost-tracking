@@ -187,3 +187,4 @@ is in [PROCESS.md](PROCESS.md).
 - Refactor agent skills to be more efficient.
 - Teach Kyber itself to attribute cost per issue, so the platform and the
   team agree on one number.
+- Run many more Github issues through the team to get better fidelity on the numbers.
