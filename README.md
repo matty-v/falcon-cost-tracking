@@ -132,8 +132,6 @@ is in [PROCESS.md](PROCESS.md).
   every agent re-reads, prediction already registered
   ([details](docs/experiments/cost-per-issue.md), 8–12% savings).
 - Give partial rows a proper minimum-cost figure instead of a footnote.
-- Fix the mid-task restart gap so readings stop getting lost.
-- Chase the next two levers the data points at: the number of API calls per
-  stage, and how deep code review needs to be.
+- Refactor agent skills to be more efficient.
 - Teach Kyber itself to attribute cost per issue, so the platform and the
   team agree on one number.
