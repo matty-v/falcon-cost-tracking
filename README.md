@@ -37,6 +37,35 @@ pickup (an odometer reading of its session) and once at completion (posting
 what its stage used and on which model). At the end, Lando adds it all up
 with [`issue-cost.sh`](docs/mirror/issue-cost.sh) to show me a final number.
 
+### The mechanics
+
+An agent's skills are markdown playbooks loaded into its Claude Code
+session, and each cost step is deliberately a shell script the playbook
+tells the agent to run — a repeated lesson of this project is that agents
+execute instructions that ARE a command far more reliably than instructions
+that describe a procedure ([PROCESS.md](PROCESS.md) records prose steps
+being skipped while script invocations ran 8 for 8). Concretely:
+
+- The scripts live in the team's shared repo (`falcon-dev-common`), are
+  vendored SHA-pinned into each agent's identity repo, and get linked into
+  the pod's skills directory at session start — the whole fleet runs the
+  same reviewed version, and the pin SHA is stamped into every report.
+- [`token-usage.sh`](docs/mirror/token-usage.sh) runs inside the pod against
+  the agent's own session transcript (JSONL on the pod's persistent disk):
+  it sums finalized assistant entries per model across the transcript tree,
+  deduplicating by message id. At pickup it posts the baseline; at
+  completion it computes the stage's delta and embeds it as a hidden
+  HTML-comment marker (`falcon:usage:v1`) inside the GitHub comment the
+  agent already posts via the `gh` CLI — no new infrastructure, the issue
+  itself is the data bus.
+- At issue close, Lando's [`issue-cost.sh`](docs/mirror/issue-cost.sh)
+  collects every marker across the issue and its auto-discovered PRs,
+  prices the tokens from a vendored machine-generated rate table (no
+  hand-typed prices anywhere), and appends one row to the ledger. A
+  15-minute cron backstop ([`ledger-reconciler.sh`](docs/mirror/ledger-reconciler.sh))
+  writes any row the close-out missed and retries rows that couldn't be
+  priced.
+
 ## An Experiment in Model Cost versus Quality
 
 Part of this assignment was to first add cost tracking. I had all the
