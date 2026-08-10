@@ -88,5 +88,3 @@ workers' transcript-based self-reports against the platform's windowed metrics
 and labels any discrepancy instead of averaging it away. Self-reports are the
 authoritative per-issue number (they attribute by stage, and they always include
 output tokens); the metrics API is the independent backstop.
-
-*(Diagram and deeper architecture detail to be refined in Phase 5.)*

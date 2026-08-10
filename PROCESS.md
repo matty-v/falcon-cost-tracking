@@ -172,7 +172,7 @@ review), and built the team layer (Phase 2) in the foreground:
   the scripts + full patches into `docs/mirror/` here, since reviewers can't see
   the private repos.
 
-### Session 1, continued — the kyber PR lands ([[kyber#23](https://github.com/matty-v/kyber/pull/23)](https://github.com/matty-v/kyber/pull/23))
+### Session 1, continued — the kyber PR lands ([kyber#23](https://github.com/matty-v/kyber/pull/23))
 
 The background implementation agent finished the platform fix: output tokens
 wired end-to-end (parser → snapshot → accumulator → delta → windowed series →
@@ -549,6 +549,12 @@ the record:
 The pattern across both: the AI proposes with arithmetic, the human redirects
 with judgment about risk placement, and the doc registers predictions before
 data arrives so hindsight can't rewrite them.
+
+One later update, recorded before any arm-2 issue ran: at wiring time I put
+the economy tier on sonnet-5 — newer-generation than the sonnet-4-5 in the
+spec above AND cheaper (a 60% rate cut instead of 40%) — and the registered
+band tightened from $25–27 to $21–24 (~35%). The experiment doc carries the
+updated registration.
 
 ### Session 4 — 2026-08-09 — the experiment concludes
 

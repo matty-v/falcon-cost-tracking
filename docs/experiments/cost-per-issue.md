@@ -19,7 +19,7 @@ written down BEFORE the arms run.
 
 **Median $33.86 / issue (floor basis), mean $36.29, range $28.19–49.26.
 Median 46.0M tokens / issue, about 97–98% cache reads.** "Floor" = sum of
-priceable stages; 2 of 30 stage-segments were honest `unavailable` holes
+priceable stages; 2 of 35 stage-segments were honest `unavailable` holes
 (mid-stage session recycles destroyed both baseline copies) and are excluded.
 
 ### Per-stage medians
@@ -90,12 +90,13 @@ baseline. No mid-arm vendor merges; no mid-issue pod recycles.
 
 | issue | tokens | cost (floor) | kickbacks | notes |
 |---|---|---|---|---|
-| snapdex#1000 (view switcher) | about 60M | **$22.63** (full) | 1 | yolo; first fast-path-priced row |
+| snapdex#1000 (view switcher) | about 60M | **$22.63** | 1 | yolo; first fast-path-priced row; 1 lower-bound stage (build transcript rotated mid-stage) |
 | snapdex#1001 (dex-card link) | 75.0M | $33.07 | 1 | yolo; 1 hole (obi-wan baseline lost) |
 | snapdex#1008 (report-sheet styling fix) | 44.1M | **$20.06** (full) | 1 | non-yolo, ZERO holes — best-matched datum; independent recomputation matched the official row to the cent |
 
-Both arm-2 issues ran yolo-labeled (consistent within-arm; differs from the
-gated baseline — flagged confound). Wiring verified from transcript models on
+The first two arm-2 issues (#1000, #1001) ran yolo-labeled (differs from the
+gated baseline — flagged confound); the closer #1008 ran under normal gates.
+Wiring verified from transcript models on
 every report: opus-5 only at architecture + review/smoke, sonnet-5 everywhere
 else.
 
@@ -167,5 +168,10 @@ one kickback (about \$10, per #997) erases the savings.
 Rows for #995/#997 are Lando's official `cost-ledger.jsonl`; #998/#999 were
 aggregated from the same GitHub markers with the same script (`issue-cost.sh`)
 run locally ahead of Lando's close-out cron (method verified identical on
-#995: $28.19 both ways). Rates: LiteLLM@b45b4b7 via kyber's generated feed —
+#995: $28.19 both ways). Arm 2: #1000/#1008 are official rows; #1001 was
+aggregated locally the same way, which is why the mirrored ledger snapshot
+has no #1001 row. #997's official row carries full token counts but honestly
+declines a dollar total (`priced: false` — its `unavailable` hole); the
+$49.26 floor above is the local sum of its priceable stages via the same
+script. Rates: LiteLLM@b45b4b7 via kyber's generated feed —
 no hand-typed prices anywhere in the pipeline.
