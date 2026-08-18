@@ -1,8 +1,13 @@
 # Kessel Run baseline hardening — implementation plan
 
-**Status:** approved for implementation  
-**Recorded:** 2026-08-18  
+**Status:** implemented in review; rollout pending
+
+**Recorded:** 2026-08-18
+
 **Follow-on to:** [Per-issue cost tracking](../../../README.md)
+
+Implementation and verification status is recorded in
+[IMPLEMENTATION-STATUS.md](IMPLEMENTATION-STATUS.md).
 
 ## Objective
 

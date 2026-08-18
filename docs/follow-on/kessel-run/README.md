@@ -6,7 +6,8 @@ implements the same frozen task through its normal issue-to-deployment workflow
 so run-to-run token use, cost, latency, rework, and validity can be compared.
 
 The hardening work required before baseline collection is specified in
-[IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md).
+[IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md); current rollout state and
+verification evidence are in [IMPLEMENTATION-STATUS.md](IMPLEMENTATION-STATUS.md).
 
 Only sanitized experiment metrics belong here. The private task bank and any
 implementation details remain outside repositories the benchmark agents can
