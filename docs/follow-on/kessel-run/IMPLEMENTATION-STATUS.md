@@ -2,9 +2,9 @@
 
 **Recorded:** 2026-08-18
 
-**State:** code complete; review, propagation, and fleet rollout pending
+**State:** merged and propagated; fleet restart and qualification run pending
 
-The plan is implemented as three reviewable changes:
+The plan was implemented and merged as three reviewable changes:
 
 - [falcon-dev-common #140](https://github.com/matty-v/falcon-dev-common/pull/140)
   adds immutable v2 ledger identity, fresh-workspace preparation and
@@ -29,10 +29,12 @@ The plan is implemented as three reviewable changes:
   these changes: the local environment lacks `pytest`, and two legacy
   `pre_commit_guard` expectations fail against current behavior.
 
+The shared vendor propagation workflow completed successfully and merged the
+bundle bump into all eight identity repositories.
+
 ## Remaining rollout gates
 
-Baseline collection must not begin until all three PRs are reviewed and merged,
-the shared vendor update reaches the participating identity repositories, and
-the six participant pods are restarted onto the new bundle. The first run after
-rollout is a qualification run, not part of the ten-run sample, unless it
-satisfies every validity gate in the implementation plan.
+Baseline collection must not begin until the six participant pods are restarted
+onto the new bundle. The first run after rollout is a qualification run, not
+part of the ten-run sample, unless it satisfies every validity gate in the
+implementation plan.

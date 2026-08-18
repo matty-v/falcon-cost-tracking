@@ -1,6 +1,6 @@
 # Kessel Run baseline hardening — implementation plan
 
-**Status:** implemented in review; rollout pending
+**Status:** merged and propagated; fleet restart pending
 
 **Recorded:** 2026-08-18
 
